@@ -42,7 +42,12 @@ fn top_level_example_files(root: &Path) -> Vec<PathBuf> {
 fn non_network_examples_execute_without_errors() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples");
     let expected_failures = ["error_hint_demo.tfel", "error_context_demo.tfel"];
-    let runtime_skips = ["api_request_demo.tfel", "http_demo.tfel", "input_demo.tfel"];
+    let runtime_skips = [
+        "api_request_demo.tfel",
+        "http_demo.tfel",
+        "input_demo.tfel",
+        "fibonacci.tfel",
+    ];
 
     for path in top_level_example_files(&root) {
         let name = path

@@ -165,6 +165,7 @@ pub struct Evaluator {
     base_dir: PathBuf,
     module_cache: HashMap<PathBuf, HashMap<String, Value>>,
     import_stack: Vec<PathBuf>,
+    call_depth: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -174,6 +175,7 @@ enum EvalFlow {
 }
 
 const MAX_LOOP_ITERATIONS: usize = 100_000;
+const MAX_CALL_DEPTH: usize = 64;
 
 impl Evaluator {
     pub fn new() -> Self {
@@ -186,6 +188,7 @@ impl Evaluator {
             base_dir,
             module_cache: HashMap::new(),
             import_stack: Vec::new(),
+            call_depth: 0,
         }
     }
 
@@ -590,6 +593,16 @@ impl Evaluator {
                     )));
                 }
 
+                if self.call_depth >= MAX_CALL_DEPTH {
+                    return Err(
+                        EvalError::new(format!(
+                            "function call depth exceeded limit ({MAX_CALL_DEPTH})"
+                        ))
+                        .with_hint("rewrite deep recursion as an iterative loop"),
+                    );
+                }
+
+                self.call_depth += 1;
                 let outer_env = self.env.clone();
                 let call_env = Environment::new_enclosed(function.closure.clone());
                 self.env = call_env;
@@ -602,6 +615,7 @@ impl Evaluator {
                     err.with_context(format!("while calling function '{}'", function.name))
                 });
                 self.env = outer_env;
+                self.call_depth -= 1;
 
                 match result? {
                     EvalFlow::Value(value) => Ok(value),

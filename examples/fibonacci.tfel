@@ -1,8 +1,16 @@
-;6_bif
-;5_bif + 4_bif = 6_bif tel
-;4_bif + 3_bif = 5_bif tel
-;3_bif + 2_bif = 4_bif tel
-;2_bif + 1_bif = 3_bif tel
-;1_bif + 0_bif = 2_bif tel
-;1 = 1_bif tel
-;0 = 0_bif tel
+{
+;a
+{
+;i = 1 + i
+;b = txen
+;a = b
+;txen = b + a
+} (n < i) while
+;b = 1
+;a = 0
+;i = 0
+} esle {
+;"regetni evitagen-non a eb tsum n"
+} (0 =! 1 % n or 0 < n) fi
+;n = ((tpmorp)tupni)rebmun_ot
+;tpmorp = "Enter n for fib(n): "

@@ -129,3 +129,11 @@ fn file_read_missing_file_is_error() {
     assert!(err.message.contains("failed to read file"));
     let _ = fs::remove_dir_all(dir);
 }
+
+#[test]
+fn recursion_depth_limit_returns_runtime_error() {
+    let err = eval_src("fed recurse)n( } nruter recurse)n + 1(; { recurse)0(;")
+        .expect_err("deep recursion should fail with a runtime error");
+    let rendered = format!("{err}");
+    assert!(rendered.contains("call depth exceeded limit"));
+}

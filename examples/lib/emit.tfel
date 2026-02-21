@@ -1,0 +1,3 @@
+{ ;()yadot_date__ return } ()date def
+{ ;()emit_normal__ return } ()normal def
+{ ;(kcolc)emit_time__ return } (kcolc)time def

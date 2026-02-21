@@ -1,0 +1,4 @@
+;mus
+{ ;mus = i + mus ;i = i + 1 } (5 < i) while
+mus = 0
+i = 0

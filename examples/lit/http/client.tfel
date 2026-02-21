@@ -1,0 +1,4 @@
+{ ;[0](lru ,"GET")tseuqer_ptth__ return } (lru)sutats def
+{ ;[1](ydob ,lru ,"POST")tseuqer_ptth__ return } (ydob ,lru)tsop def
+{ ;[1](lru ,"GET")tseuqer_ptth__ return } (lru)teg def
+{ ;(ydob ,lru ,dohtem)tseuqer_ptth__ return } (ydob ,lru ,dohtem)tseuqer def

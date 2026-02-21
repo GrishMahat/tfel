@@ -1,0 +1,4 @@
+;mun + (txet)len
+txet = "abcd"
+mun = (war)to_number
+war = "42"

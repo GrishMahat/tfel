@@ -594,12 +594,10 @@ impl Evaluator {
                 }
 
                 if self.call_depth >= MAX_CALL_DEPTH {
-                    return Err(
-                        EvalError::new(format!(
-                            "function call depth exceeded limit ({MAX_CALL_DEPTH})"
-                        ))
-                        .with_hint("rewrite deep recursion as an iterative loop"),
-                    );
+                    return Err(EvalError::new(format!(
+                        "function call depth exceeded limit ({MAX_CALL_DEPTH})"
+                    ))
+                    .with_hint("rewrite deep recursion as an iterative loop"));
                 }
 
                 self.call_depth += 1;

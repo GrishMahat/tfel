@@ -1,3 +1,3 @@
-;(7)n_dda
-{ ;n + x return } (x)n_dda def
-n = 3
+;(7)tnemercni_dda
+{ ;tnemercni_derutpac + eulav return } (eulav)tnemercni_dda def
+;tnemercni_derutpac = 3

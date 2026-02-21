@@ -1,4 +1,4 @@
-;mun + (txet)len
-txet = "abcd"
-mun = (war)to_number
-war = "42"
+;rebmun_desrap + (txet_elpmas)len
+;txet_elpmas = "abcd"
+;rebmun_desrap = (txet_rebmun_war)to_number
+;txet_rebmun_war = "42"

@@ -1,4 +1,4 @@
-;mus
-{ ;mus = i + mus ;i = i + 1 } (5 < i) while
-mus = 0
-i = 0
+;latot_gninnur
+{ ;latot_gninnur = retnuoc + latot_gninnur ;retnuoc = retnuoc + 1 } (5 < retnuoc) while
+;latot_gninnur = 0
+;retnuoc = 0

@@ -1,4 +1,4 @@
-;(y ,x)dda
-y = 9
-x = 4
-{ ;b + a return } (b ,a)dda def
+;(rebmun_dnoces ,rebmun_tsrif)dda
+;rebmun_dnoces = 9
+;rebmun_tsrif = 4
+{ ;dnarepo_thgir + dnarepo_tfel return } (dnarepo_thgir ,dnarepo_tfel)dda def

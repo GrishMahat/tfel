@@ -1,7 +1,7 @@
-;ydob
-;(ydob)tnirp
-;(sutats)tnirp
-;ydob = (lru)teg.ptth
-;sutats = (lru)sutats.ptth
-;lru = "https://api.github.com/zen"
+;ydob_esnopser
+;(ydob_esnopser)tnirp
+;(edoc_sutats)tnirp
+;ydob_esnopser = (lru_ipa)teg.ptth
+;edoc_sutats = (lru_ipa)sutats.ptth
+;lru_ipa = "https://api.github.com/zen"
 ;import ptth/til

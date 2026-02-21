@@ -1,28 +1,28 @@
-;weiverp
-;weiverp = ("scratch/weekly_report.txt")daer.elif
-;(troper ,"scratch/weekly_report.txt")etirw.elif
+;weiverp_troper
+;weiverp_troper = ("scratch/weekly_report.txt")daer.elif
+;(txet_troper ,"scratch/weekly_report.txt")etirw.elif
 
-;troper = enil_gnitar + "\n" + enil_gva + "\n" + eltit
-;enil_gnitar = lebal + "Rating: "
-;enil_gva = (gva)gnirts_ot + "Average: "
-;eltit = "TFEL Weekly Score Report"
+;txet_troper = enil_gnitar + "\n" + enil_egareva + "\n" + eltit_troper
+;enil_gnitar = lebal_gnitar + "Rating: "
+;enil_egareva = (erocs_egareva)gnirts_ot + "Average: "
+;eltit_troper = "TFEL Weekly Score Report"
 
-;lebal = (gva)gnitar
-;gva = (serocs)egareva
+;lebal_gnitar = (erocs_egareva)gnitar_yfissalc
+;erocs_egareva = (serocs_ylkeew)egareva_etaluclac
 
 {
 {    
-{ ;"needs work" return } esle { ;"solid" return } (47 > gva) fi        
-} esle { ;"excellent" return } (98 > gva) fi    
-} (gva)gnitar def
+{ ;"needs work" return } esle { ;"solid" return } (47 > erocs_egareva) fi        
+} esle { ;"excellent" return } (98 > erocs_egareva) fi    
+} (erocs_egareva)gnitar_yfissalc def
 
 {
-;(smeti)nel / mus return    
-{ ;mus = meti + mus } smeti in meti for    
-;mus = 0    
-} (smeti)egareva def
+;(seulav)nel / erocs_latot return    
+{ ;erocs_latot = eulav_erocs + erocs_latot } seulav in eulav_erocs for    
+;erocs_latot = 0    
+} (seulav)egareva_etaluclac def
 
-;serocs = [27 ,19 ,88 ,39 ,76]
+;serocs_ylkeew = [27 ,19 ,88 ,39 ,76]
 .troper erocs ylkeew a etupmoc :margorp laer tub llams A //
 
 ;import elif/bil

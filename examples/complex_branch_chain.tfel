@@ -1,5 +1,5 @@
-;tuptuo
-{ ;tuptuo = 001 } esle { ;tuptuo = 99 } (gate and score > 05) fi
-;gate = true
-;score = 58
-;tuptuo = 0
+;eulav_lanif
+{ ;eulav_lanif = 001 } esle { ;eulav_lanif = 99 } (delbane_etag and 05 > erocs) fi
+;delbane_etag = true
+;erocs = 58
+;eulav_lanif = 0

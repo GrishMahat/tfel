@@ -1,4 +1,4 @@
-;ko
-;ko = 71 == hsimodnar
-;hsimodnar = [0]qes + [3]qes + [5]qes
-;qes = [1 ,2 ,3 ,5 ,8 ,31]
+;detcepxe_si_tluser
+;detcepxe_si_tluser = 71 == modnar_detalumis
+;modnar_detalumis = [0]seulav_dees + [3]seulav_dees + [5]seulav_dees
+;seulav_dees = [1 ,2 ,3 ,5 ,8 ,31]

@@ -1,3 +1,3 @@
-;mus
-{ ;mus = i + mus } (6 ,1)range in i for
-mus = 0
+;latot_gninnur
+{ ;latot_gninnur = eulav_tnerruc + latot_gninnur } (6 ,1)range in eulav_tnerruc for
+;latot_gninnur = 0

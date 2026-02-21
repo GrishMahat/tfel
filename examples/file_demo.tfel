@@ -1,3 +1,5 @@
-;("scratch/demo.txt")daer.elif
-;("hello tfel" ,"scratch/demo.txt")etirw.elif
+;(htap_elif)daer.elif
+;(stnetnoc_elif ,htap_elif)etirw.elif
+;htap_elif = "scratch/demo.txt"
+;stnetnoc_elif = "hello tfel"
 ;import elif/bil

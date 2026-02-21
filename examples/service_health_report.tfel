@@ -1,43 +1,43 @@
-;weiverp
-;weiverp = ("scratch/service_health_report.txt")daer.elif
-;(troper ,"scratch/service_health_report.txt")etirw.elif
-;troper = enil_sutats + "\n" + enil_ksir + "\n" + enil_erocs + "\n" + enil_stnedicni + "\n" + enil_secivres + "\n" + redaeh
+;weiverp_troper
+;weiverp_troper = ("scratch/service_health_report.txt")daer.elif
+;(txet_troper ,"scratch/service_health_report.txt")etirw.elif
+;txet_troper = enil_sutats + "\n" + enil_ksir + "\n" + enil_erocs_emitpu + "\n" + enil_tnuoc_tnedicni + "\n" + enil_tnuoc_ecivres + "\n" + redaeh_troper
 
-;enil_sutats = erocs + "Status: "
-;enil_ksir = ksir + "Risk: "
-;enil_erocs = (erocs_gva)gnirts_ot + "Average uptime score: "
-;enil_stnedicni = (stnedicni_latot)gnirts_ot + "Incidents this week: "
-;enil_secivres = ((secivres)nel)gnirts_ot + "Services: "
-;redaeh = "TFEL Service Health"
+;enil_sutats = lebal_sutats + "Status: "
+;enil_ksir = yrogetac_ksir + "Risk: "
+;enil_erocs_emitpu = (erocs_emitpu_egareva)gnirts_ot + "Average uptime score: "
+;enil_tnuoc_tnedicni = (tnuoc_tnedicni_latot)gnirts_ot + "Incidents this week: "
+;enil_tnuoc_ecivres = ((seman_ecivres)nel)gnirts_ot + "Services: "
+;redaeh_troper = "TFEL Service Health"
 
-;erocs = (erocs_gva)lebal_erocs
-;ksir = (stnedicni_latot)level_ksir
-;erocs_gva = (serocs_emitpu)egareva
+;lebal_sutats = (erocs_emitpu_egareva)sutats_yfissalc
+;yrogetac_ksir = (tnuoc_tnedicni_latot)ksir_yfissalc
+;erocs_emitpu_egareva = (serocs_emitpu)egareva_etaluclac
 
-{ ;stnedicni_latot = n + stnedicni_latot } stnedicni in n for
-;stnedicni_latot = 0
-
-{
-{    
-{ ;"needs-attention" return } esle { ;"ok" return } (08 > erocs_gva) fi        
-} esle { ;"great" return } (09 > erocs_gva) fi    
-} (erocs_gva)lebal_erocs def
+{ ;tnuoc_tnedicni_latot = tnuoc_tnedicni + tnuoc_tnedicni_latot } stnuoc_tnedicni in tnuoc_tnedicni for
+;tnuoc_tnedicni_latot = 0
 
 {
 {    
-{ ;"low" return } esle { ;"medium" return } (2 > stnedicni_latot) fi        
-} esle { ;"high" return } (5 > stnedicni_latot) fi    
-} (stnedicni_latot)level_ksir def
+{ ;"needs-attention" return } esle { ;"ok" return } (08 > erocs_emitpu_egareva) fi        
+} esle { ;"great" return } (09 > erocs_emitpu_egareva) fi    
+} (erocs_emitpu_egareva)sutats_yfissalc def
 
 {
-;(smeti)nel / mus return    
-{ ;mus = meti + mus } smeti in meti for    
-;mus = 0    
-} (smeti)egareva def
+{    
+{ ;"low" return } esle { ;"medium" return } (2 > tnuoc_tnedicni_latot) fi        
+} esle { ;"high" return } (5 > tnuoc_tnedicni_latot) fi    
+} (tnuoc_tnedicni_latot)ksir_yfissalc def
+
+{
+;(seulav)nel / eulav_latot return    
+{ ;eulav_latot = eulav + eulav_latot } seulav in eulav for    
+;eulav_latot = 0    
+} (seulav)egareva_etaluclac def
 
 ;serocs_emitpu = [97 ,29 ,88 ,59]
-;stnedicni = [2 ,0 ,1 ,3]
-;secivres = ["billing" ,"ui" ,"auth" ,"api"]
+;stnuoc_tnedicni = [2 ,0 ,1 ,3]
+;seman_ecivres = ["billing" ,"ui" ,"auth" ,"api"]
 .troper htlaeh ecivres a etareneg :omed hsi-dlrow-laeR //
 
 ;import elif/bil

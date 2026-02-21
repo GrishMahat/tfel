@@ -1,0 +1,28 @@
+;weiverp
+;weiverp = ("scratch/weekly_report.txt")daer.elif
+;(troper ,"scratch/weekly_report.txt")etirw.elif
+
+;troper = enil_gnitar + "\n" + enil_gva + "\n" + eltit
+;enil_gnitar = lebal + "Rating: "
+;enil_gva = (gva)gnirts_ot + "Average: "
+;eltit = "TFEL Weekly Score Report"
+
+;lebal = (gva)gnitar
+;gva = (serocs)egareva
+
+{
+{    
+{ ;"needs work" return } esle { ;"solid" return } (47 > gva) fi        
+} esle { ;"excellent" return } (98 > gva) fi    
+} (gva)gnitar def
+
+{
+;(smeti)nel / mus return    
+{ ;mus = meti + mus } smeti in meti for    
+;mus = 0    
+} (smeti)egareva def
+
+;serocs = [27 ,19 ,88 ,39 ,76]
+.troper erocs ylkeew a etupmoc :margorp laer tub llams A //
+
+;import elif/bil

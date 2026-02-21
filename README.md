@@ -158,6 +158,18 @@ Notes:
 
 ## Example programs
 
+Recommended first real example:
+
+```bash
+cargo run -- examples/weekly_report_showcase.tfel
+```
+
+A more real-world-ish mini project:
+
+```bash
+cargo run -- examples/service_health_report.tfel
+```
+
 ```bash
 cargo run -- examples/hello.tfel
 cargo run -- examples/fibonacci.tfel
@@ -181,6 +193,8 @@ cargo run -- examples/types_demo.tfel
 cargo run -- examples/emit_demo.tfel
 cargo run -- examples/emit_normal_demo.tfel
 cargo run -- examples/file_demo.tfel
+cargo run -- examples/weekly_report_showcase.tfel
+cargo run -- examples/service_health_report.tfel
 cargo run -- examples/http_demo.tfel
 cargo run -- examples/api_request_demo.tfel
 ```

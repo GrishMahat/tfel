@@ -176,7 +176,7 @@ fn reverse_line_preserving_string_literals_with_map(
 
         for (ch, source_byte) in chars {
             out.push(ch);
-            map.extend(std::iter::repeat(source_byte).take(ch.len_utf8()));
+            map.extend(std::iter::repeat_n(source_byte, ch.len_utf8()));
         }
     }
 

@@ -1,4 +1,4 @@
-use tfel::preprocessor::preprocess_source;
+use tfel::preprocessor::{preprocess_source, preprocess_source_with_map};
 
 #[test]
 fn reverses_each_line_for_single_line_input() {
@@ -33,4 +33,15 @@ fn preserves_escaped_quotes_inside_strings() {
     let logical = "print)\"a \\\"quoted\\\" value\"(;";
     let roundtrip = preprocess_source(&preprocess_source(logical));
     assert_eq!(roundtrip, logical);
+}
+
+#[test]
+fn source_map_points_back_to_original_bytes() {
+    let mirrored = ";1 = x\n;2 = y\n";
+    let output = preprocess_source_with_map(mirrored);
+    assert_eq!(output.source, "y = 2;\nx = 1;\n");
+
+    let y_offset = output.source.find('y').expect("output should contain y");
+    let mapped = output.source_map.map_offset(y_offset);
+    assert_eq!(&mirrored[mapped..mapped + 1], "y");
 }

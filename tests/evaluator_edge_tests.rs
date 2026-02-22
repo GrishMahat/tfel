@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use tfel::evaluator::{EvalError, Evaluator, Value};
+use tfel::evaluator::{EvalError, Evaluator, EvaluatorOptions, RuntimePermissions, Value};
 use tfel::lexer::tokenize;
 use tfel::parser::Parser;
 use tfel::preprocessor::preprocess_source;
@@ -35,6 +35,15 @@ fn eval_src_with_base(src: &str, base_dir: PathBuf) -> Result<Value, EvalError> 
         .parse_program()
         .expect("parsing should pass");
     let mut eval = Evaluator::with_base_dir(base_dir);
+    eval.eval_program(&program)
+}
+
+fn eval_src_with_options(src: &str, options: EvaluatorOptions) -> Result<Value, EvalError> {
+    let tokens = tokenize(src).expect("lexing should pass");
+    let program = Parser::new(tokens)
+        .parse_program()
+        .expect("parsing should pass");
+    let mut eval = Evaluator::with_options(options);
     eval.eval_program(&program)
 }
 
@@ -136,4 +145,43 @@ fn recursion_depth_limit_returns_runtime_error() {
         .expect_err("deep recursion should fail with a runtime error");
     let rendered = format!("{err}");
     assert!(rendered.contains("call depth exceeded limit"));
+}
+
+#[test]
+fn strict_mode_rejects_assignment_to_undefined_variable() {
+    let err = eval_src_with_options(
+        "20 = y;",
+        EvaluatorOptions {
+            strict_tfel: true,
+            permissions: RuntimePermissions::default(),
+        },
+    )
+    .expect_err("strict mode should reject implicit variable creation");
+    assert!(err.message.contains("assignment to undefined variable 'y'"));
+}
+
+#[test]
+fn permission_gate_blocks_filesystem_builtins() {
+    let err = eval_src_with_options(
+        "__read_file)\"foo.txt\"(;",
+        EvaluatorOptions {
+            strict_tfel: false,
+            permissions: RuntimePermissions::restricted(),
+        },
+    )
+    .expect_err("restricted runtime should block fs");
+    assert!(err.message.contains("filesystem access is disabled"));
+}
+
+#[test]
+fn permission_gate_blocks_network_builtin() {
+    let err = eval_src_with_options(
+        "__http_request)\"GET\", \"https://example.com\"(;",
+        EvaluatorOptions {
+            strict_tfel: false,
+            permissions: RuntimePermissions::restricted(),
+        },
+    )
+    .expect_err("restricted runtime should block network");
+    assert!(err.message.contains("network access is disabled"));
 }

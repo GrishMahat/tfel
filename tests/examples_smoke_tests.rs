@@ -39,6 +39,26 @@ fn top_level_example_files(root: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
+fn all_top_level_examples_lex_and_parse() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples");
+
+    for path in top_level_example_files(&root) {
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read '{}': {}", path.display(), err));
+        let preprocessed = preprocess_source(&source);
+        let tokens = tokenize(&preprocessed)
+            .unwrap_or_else(|errors| panic!("lex error in '{}': {}", path.display(), errors[0]));
+        let parsed = Parser::new(tokens).parse_program();
+        assert!(
+            parsed.is_ok(),
+            "parse error in '{}': {}",
+            path.display(),
+            parsed.err().unwrap()[0]
+        );
+    }
+}
+
+#[test]
 fn non_network_examples_execute_without_errors() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples");
     let expected_failures = ["error_hint_demo.tfel", "error_context_demo.tfel"];
@@ -47,6 +67,7 @@ fn non_network_examples_execute_without_errors() {
         "http_demo.tfel",
         "input_demo.tfel",
         "fibonacci.tfel",
+        "service_health_reporter.tfel",
     ];
 
     for path in top_level_example_files(&root) {

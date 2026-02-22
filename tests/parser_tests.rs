@@ -1,6 +1,6 @@
 use tfel::ast::{Expr, Stmt};
 use tfel::lexer::tokenize;
-use tfel::parser::Parser;
+use tfel::parser::{Parser, ParserOptions};
 
 #[test]
 fn parses_tfel_right_to_left_assignment() {
@@ -68,4 +68,39 @@ fn parses_namespaced_call_expression() {
         }
         _ => panic!("expected namespaced call expression"),
     }
+}
+
+#[test]
+fn parser_reports_hint_for_normal_assignment_shape() {
+    let src = "x = 10;";
+    let tokens = tokenize(src).expect("lexer should succeed");
+    let errors = Parser::new(tokens)
+        .parse_program()
+        .expect_err("parser should fail");
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("TFEL: value = name"));
+    assert!(
+        errors[0]
+            .hint
+            .as_deref()
+            .unwrap_or_default()
+            .contains("normal assignment")
+    );
+}
+
+#[test]
+fn strict_mode_rejects_let_keyword_with_hint() {
+    let src = "let x = 10;";
+    let tokens = tokenize(src).expect("lexer should succeed");
+    let errors = Parser::with_options(tokens, ParserOptions { strict_tfel: true })
+        .parse_program()
+        .expect_err("parser should reject let in strict mode");
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains("disabled in --strict-tfel"));
+    assert_eq!(
+        errors[0].hint.as_deref(),
+        Some("use `tel name = value;` instead")
+    );
 }

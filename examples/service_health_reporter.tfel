@@ -1,0 +1,109 @@
+;(nwodkram)tnirp
+;("wrote scratch/service_health_reporter.md and scratch/service_health_reporter.json")tnirp
+
+;(troper_nosj ,"scratch/service_health_reporter.json")etirw.elif
+;(nwodkram ,"scratch/service_health_reporter.md")etirw.elif
+
+;troper_nosj = "\n}\n" + secivres_nosj + "},\n  \"services\": " + (tcp_emitpu)gnirts_ot + ",\"uptime_pct\":" + (tnuoc_nwod)gnirts_ot + ",\"down\":" + (tnuoc_dedarged)gnirts_ot + ",\"degraded\":" + (tnuoc_pu)gnirts_ot + ",\"up\":" + (tnuoc_latot)gnirts_ot + "\",\n  \"summary\": {\"total\":" + ()emit_normal__ + "\",\n  \"generated_time\": \"" + ()yadot_date__ + "{\n  \"generated_date\": \""
+
+;nwodkram = "\n" + (tcp_emitpu)gnirts_ot + "- Uptime score )%( : " + nwodkram
+;nwodkram = "\n" + (tnuoc_nwod)gnirts_ot + "- DOWN: " + nwodkram
+;nwodkram = "\n" + (tnuoc_dedarged)gnirts_ot + "- DEGRADED: " + nwodkram
+;nwodkram = "\n" + (tnuoc_pu)gnirts_ot + "- UP: " + nwodkram
+;nwodkram = "\n" + (tnuoc_latot)gnirts_ot + "- Total services: " + nwodkram
+;nwodkram = "\n## Summary\n" + nwodkram
+
+;tcp_emitpu = 001 * (tnuoc_latot / tnuoc_pu)
+
+;secivres_nosj = "]" + secivres_nosj
+
+{
+;secivres_nosj = "\n" + nosj_wor + secivres_nosj    
+{    
+;continue        
+;secivres_nosj = ",\n" + nosj_wor + secivres_nosj        
+} (tnuoc_latot < xedni_wor) fi    
+;xedni_wor = 1 + xedni_wor    
+
+;nosj_wor = "}" + (nel_ydob)gnirts_ot + ",\"body_bytes\":" + (stpmetta)gnirts_ot + "\",\"attempts\":" + lebal + ",\"label\":\"" + (sutats)gnirts_ot + "\",\"status\":" + lru + "\",\"url\":\"" + eman + "    {\"name\":\""    
+
+;nwodkram = nwodkram_wor + nwodkram    
+;nwodkram_wor = " |\n" + eton + " | " + (nel_ydob)gnirts_ot + " | " + (stpmetta)gnirts_ot + " | " + lebal + " | " + (sutats)gnirts_ot + " | " + lru + " | " + eman + "| "    
+
+{ ;tnuoc_nwod = 1 + tnuoc_nwod } ("DOWN" == lebal) fi    
+{ ;tnuoc_dedarged = 1 + tnuoc_dedarged } ("DEGRADED" == lebal) fi    
+{ ;tnuoc_pu = 1 + tnuoc_pu } ("UP" == lebal) fi    
+
+;eton = [6]tluser    
+;nel_ydob = [5]tluser    
+;stpmetta = [4]tluser    
+;lebal = [3]tluser    
+;sutats = [2]tluser    
+;tluser = (stpmetta_xam ,lru ,eman)ecivres_kcehc    
+
+{    
+;continue        
+;xedni_wor = 1 + xedni_wor        
+} (0 == (lru)nel) fi    
+
+;stpmetta_xam = [2]tegrat    
+;lru = [1]tegrat    
+;eman = [0]tegrat    
+} stegrat in tegrat for
+
+;secivres_nosj = "[\n"
+
+;nwodkram = "| Service | URL | HTTP | Label | Attempts | Body bytes | Notes |\n|---|---|---:|---|---:|---:|---|\n" + nwodkram
+;nwodkram = "# TFEL Service Health Reporter\n\n"
+
+;xedni_wor = 0
+;tnuoc_nwod = 0
+;tnuoc_dedarged = 0
+;tnuoc_pu = 0
+;tnuoc_latot = (stegrat)nel
+
+;stegrat = [
+[2 ,"https://httpbin.org/get" ,"HTTPBin"]    
+,[2 ,"https://example.com" ,"Example"]    
+,[3 ,"https://api.github.com/zen" ,"GitHub Zen"]    
+]
+
+{
+;[eton ,(ydob)nel ,tpmetta ,lebal ,sutats ,lru ,eman] return    
+
+{    
+;tpmetta = 1 + tpmetta        
+;eton = "ms )no sleep primitive(" + (sm_tiaw)gnirts_ot + "retry planned in ~"        
+;sm_tiaw = (tpmetta)sm_ffokcab        
+
+{ ;break } (stpmetta_xam => tpmetta) fi        
+{ ;break } ("UP" == lebal) fi        
+
+;lebal = (sutats)sutats_yfissalc        
+;ydob = [1]esnopser        
+;sutats = [0]esnopser        
+;esnopser = ("" ,lru ,"GET")tseuqer.ptth        
+} (eurt) while    
+
+;eton = "none"    
+;lebal = "DOWN"    
+;ydob = ""    
+;sutats = 0    
+;tpmetta = 1    
+} (stpmetta_xam ,lru ,eman)ecivres_kcehc def
+
+{
+;002 * tpmetta return    
+} (tpmetta)sm_ffokcab def
+
+{
+;"DOWN" return    
+{ ;"DEGRADED" return } (005 < sutats and 003 => sutats) fi    
+{ ;"UP" return } (003 < sutats and 002 => sutats) fi    
+} (sutats)sutats_yfissalc def
+
+;import elif/bil
+;import ptth/til
+
+.stroper NOSJ + nwodkraM htob setirw dna //
+,htlaeh seifissalc ,seirter htiw secivres evil elpitlum skcehc :eceipwohS //

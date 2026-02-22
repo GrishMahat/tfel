@@ -1,21 +1,20 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::fs;
-use std::io::{self, Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::process::Stdio;
-use std::time::Duration;
 
 use crate::ast::{Expr, InfixOp, PrefixOp, Program, Stmt};
 use crate::environment::Environment;
-use crate::lexer::tokenize;
-use crate::parser::Parser;
+use crate::lexer::{LexOptions, tokenize_with_options};
+use crate::parser::{Parser, ParserOptions};
 use crate::preprocessor::preprocess_source;
+
+mod inbuilt;
 
 #[derive(Debug, Clone)]
 pub enum Value {
+    // Numeric values use f64, so very large results can overflow to `inf`
+    // (for Fibonacci this happens starting at n = 1477).
     Number(f64),
     Boolean(bool),
     String(String),
@@ -166,21 +165,58 @@ pub struct Evaluator {
     module_cache: HashMap<PathBuf, HashMap<String, Value>>,
     import_stack: Vec<PathBuf>,
     call_depth: usize,
+    options: EvaluatorOptions,
 }
 
 #[derive(Debug, Clone)]
 enum EvalFlow {
     Value(Value),
     Return(Value),
+    Break,
+    Continue,
 }
 
 const MAX_LOOP_ITERATIONS: usize = 100_000;
 const MAX_CALL_DEPTH: usize = 64;
 
+#[derive(Debug, Clone, Copy)]
+pub struct RuntimePermissions {
+    pub allow_fs: bool,
+    pub allow_net: bool,
+}
+
+impl RuntimePermissions {
+    pub fn restricted() -> Self {
+        Self {
+            allow_fs: false,
+            allow_net: false,
+        }
+    }
+}
+
+impl Default for RuntimePermissions {
+    fn default() -> Self {
+        Self {
+            allow_fs: true,
+            allow_net: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EvaluatorOptions {
+    pub strict_tfel: bool,
+    pub permissions: RuntimePermissions,
+}
+
 impl Evaluator {
     pub fn new() -> Self {
+        Self::with_options(EvaluatorOptions::default())
+    }
+
+    pub fn with_options(options: EvaluatorOptions) -> Self {
         let env = Environment::new();
-        install_builtins(&env);
+        inbuilt::install_builtins(&env);
         let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         Self {
             env,
@@ -189,11 +225,21 @@ impl Evaluator {
             module_cache: HashMap::new(),
             import_stack: Vec::new(),
             call_depth: 0,
+            options,
         }
     }
 
     pub fn with_base_dir(base_dir: impl Into<PathBuf>) -> Self {
-        let mut evaluator = Self::new();
+        let mut evaluator = Self::with_options(EvaluatorOptions::default());
+        evaluator.base_dir = base_dir.into();
+        evaluator
+    }
+
+    pub fn with_base_dir_and_options(
+        base_dir: impl Into<PathBuf>,
+        options: EvaluatorOptions,
+    ) -> Self {
+        let mut evaluator = Self::with_options(options);
         evaluator.base_dir = base_dir.into();
         evaluator
     }
@@ -211,6 +257,12 @@ impl Evaluator {
                     return Err(EvalError::new(
                         "return statement used outside of a function",
                     ));
+                }
+                EvalFlow::Break => {
+                    return Err(EvalError::new("break statement used outside of a loop"));
+                }
+                EvalFlow::Continue => {
+                    return Err(EvalError::new("continue statement used outside of a loop"));
                 }
             }
         }
@@ -230,6 +282,15 @@ impl Evaluator {
             Stmt::Assign { name, value } => {
                 let evaluated = self.eval_expr(value)?;
                 if !self.env.assign(name, &evaluated) {
+                    if self.options.strict_tfel {
+                        return Err(EvalError::new(format!(
+                            "assignment to undefined variable '{}' in --strict-tfel mode",
+                            name
+                        ))
+                        .with_hint(
+                            "declare variables explicitly first, e.g. `tel name = value;`",
+                        ));
+                    }
                     self.env.define(name.clone(), evaluated.clone());
                 }
                 Ok(EvalFlow::Value(evaluated))
@@ -279,6 +340,9 @@ impl Evaluator {
                 };
                 Ok(EvalFlow::Return(value))
             }
+            Stmt::Break => Ok(EvalFlow::Break),
+            Stmt::Continue => Ok(EvalFlow::Continue),
+            Stmt::Export { .. } => Ok(EvalFlow::Value(Value::Null)),
             Stmt::Import { module, item } => {
                 self.eval_import(module, item.as_deref())?;
                 Ok(EvalFlow::Value(Value::Null))
@@ -388,7 +452,13 @@ impl Evaluator {
         })?;
 
         let preprocessed = preprocess_source(&source);
-        let tokens = tokenize(&preprocessed).map_err(|errors| {
+        let tokens = tokenize_with_options(
+            &preprocessed,
+            LexOptions {
+                strict_tfel: self.options.strict_tfel,
+            },
+        )
+        .map_err(|errors| {
             let first = &errors[0];
             let extra = errors.len().saturating_sub(1);
             if extra == 0 {
@@ -411,7 +481,14 @@ impl Evaluator {
             }
         })?;
 
-        let program = Parser::new(tokens).parse_program().map_err(|errors| {
+        let program = Parser::with_options(
+            tokens,
+            ParserOptions {
+                strict_tfel: self.options.strict_tfel,
+            },
+        )
+        .parse_program()
+        .map_err(|errors| {
             let first = &errors[0];
             let extra = errors.len().saturating_sub(1);
             if extra == 0 {
@@ -433,6 +510,7 @@ impl Evaluator {
                 ))
             }
         })?;
+        let explicit_exports = collect_explicit_exports(&program);
 
         self.import_stack.push(normalized_path.clone());
 
@@ -440,7 +518,7 @@ impl Evaluator {
         let previous_base_dir = self.base_dir.clone();
 
         let module_env = Environment::new();
-        install_builtins(&module_env);
+        inbuilt::install_builtins(&module_env);
         let builtin_names = module_env
             .snapshot_current_scope()
             .into_keys()
@@ -458,12 +536,30 @@ impl Evaluator {
                 normalized_path.display()
             ))
         });
-        let exports_result = module_eval.map(|_| {
-            self.env
-                .snapshot_current_scope()
-                .into_iter()
-                .filter(|(name, _)| !builtin_names.contains(name))
-                .collect::<HashMap<_, _>>()
+        let exports_result = module_eval.and_then(|_| {
+            let current_scope = self.env.snapshot_current_scope();
+            if let Some(explicit) = &explicit_exports {
+                let mut exports = HashMap::new();
+                for name in explicit {
+                    if builtin_names.contains(name) {
+                        continue;
+                    }
+                    let value = current_scope.get(name).cloned().ok_or_else(|| {
+                        EvalError::new(format!(
+                            "module '{}' exports '{}' but it is not defined",
+                            normalized_path.display(),
+                            name
+                        ))
+                    })?;
+                    exports.insert(name.clone(), value);
+                }
+                Ok(exports)
+            } else {
+                Ok(current_scope
+                    .into_iter()
+                    .filter(|(name, _)| !builtin_names.contains(name))
+                    .collect::<HashMap<_, _>>())
+            }
         });
 
         self.env = previous_env;
@@ -498,7 +594,7 @@ impl Evaluator {
                 let index = self.eval_expr(index)?;
                 match (target, index) {
                     (Value::Array(items), Value::Number(i)) => {
-                        let idx = normalize_index(i, items.len(), "array")?;
+                        let idx = inbuilt::normalize_index(i, items.len(), "array")?;
                         items
                             .get(idx)
                             .cloned()
@@ -506,7 +602,7 @@ impl Evaluator {
                     }
                     (Value::String(text), Value::Number(i)) => {
                         let chars = text.chars().collect::<Vec<_>>();
-                        let idx = normalize_index(i, chars.len(), "string")?;
+                        let idx = inbuilt::normalize_index(i, chars.len(), "string")?;
                         chars
                             .get(idx)
                             .map(|ch| Value::String(ch.to_string()))
@@ -568,6 +664,8 @@ impl Evaluator {
             {
                 EvalFlow::Value(value) => last = value,
                 EvalFlow::Return(value) => return Ok(EvalFlow::Return(value)),
+                EvalFlow::Break => return Ok(EvalFlow::Break),
+                EvalFlow::Continue => return Ok(EvalFlow::Continue),
             }
         }
         Ok(EvalFlow::Value(last))
@@ -618,6 +716,12 @@ impl Evaluator {
                 match result? {
                     EvalFlow::Value(value) => Ok(value),
                     EvalFlow::Return(value) => Ok(value),
+                    EvalFlow::Break => {
+                        Err(EvalError::new("break statement used outside of a loop"))
+                    }
+                    EvalFlow::Continue => {
+                        Err(EvalError::new("continue statement used outside of a loop"))
+                    }
                 }
             }
             Value::Builtin(builtin) => self.eval_builtin_call(builtin, args).map_err(|err| {
@@ -647,6 +751,8 @@ impl Evaluator {
             match self.eval_block_scoped(body)? {
                 EvalFlow::Value(value) => last = value,
                 EvalFlow::Return(value) => return Ok(EvalFlow::Return(value)),
+                EvalFlow::Break => break,
+                EvalFlow::Continue => continue,
             }
         }
 
@@ -660,7 +766,7 @@ impl Evaluator {
         body: &[Stmt],
     ) -> Result<EvalFlow, EvalError> {
         let iterable_value = self.eval_expr(iterable)?;
-        let elements = iterable_to_values(iterable_value)?;
+        let elements = inbuilt::iterable_to_values(iterable_value)?;
 
         let outer_env = self.env.clone();
         self.env = Environment::new_enclosed(outer_env.clone());
@@ -674,228 +780,16 @@ impl Evaluator {
                     self.env = outer_env;
                     return Ok(EvalFlow::Return(value));
                 }
+                EvalFlow::Break => {
+                    self.env = outer_env;
+                    return Ok(EvalFlow::Value(last));
+                }
+                EvalFlow::Continue => continue,
             }
         }
 
         self.env = outer_env;
         Ok(EvalFlow::Value(last))
-    }
-
-    fn eval_builtin_call(
-        &mut self,
-        builtin: BuiltinFunction,
-        args: Vec<Value>,
-    ) -> Result<Value, EvalError> {
-        match builtin {
-            BuiltinFunction::Input => self.eval_builtin_input(args),
-            BuiltinFunction::Len => eval_builtin_len(args),
-            BuiltinFunction::ToNumber => eval_builtin_to_number(args),
-            BuiltinFunction::Range => eval_builtin_range(args),
-            BuiltinFunction::TypeOf => eval_builtin_type_of(args),
-            BuiltinFunction::ToString => eval_builtin_to_string(args),
-            BuiltinFunction::EmitTime => self.eval_builtin_emit_time(args),
-            BuiltinFunction::LamronTime => self.eval_builtin_lamron_time(args),
-            BuiltinFunction::EtadToday => self.eval_builtin_etad_today(args),
-            BuiltinFunction::ReadFile => self.eval_builtin_read_file(args),
-            BuiltinFunction::WriteFile => self.eval_builtin_write_file(args),
-            BuiltinFunction::DeleteFile => self.eval_builtin_delete_file(args),
-            BuiltinFunction::HttpRequest => self.eval_builtin_http_request(args),
-        }
-    }
-
-    fn eval_builtin_input(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
-        if args.len() > 1 {
-            return Err(EvalError::new(format!(
-                "input expected 0 or 1 argument(s), got {}",
-                args.len()
-            )));
-        }
-
-        if let Some(prompt) = args.first() {
-            print!("{}", prompt);
-            io::stdout()
-                .flush()
-                .map_err(|err| EvalError::new(format!("failed to flush stdout: {err}")))?;
-        }
-
-        let line = self.read_input_line()?;
-        let trimmed = line.trim_end_matches(['\n', '\r']).to_string();
-        Ok(Value::String(trimmed))
-    }
-
-    fn read_input_line(&mut self) -> Result<String, EvalError> {
-        if let Some(line) = self.input_buffer.pop_front() {
-            return Ok(line);
-        }
-
-        let mut line = String::new();
-        io::stdin()
-            .read_line(&mut line)
-            .map_err(|err| EvalError::new(format!("failed to read input: {err}")))?;
-        Ok(line)
-    }
-
-    fn eval_builtin_emit_time(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
-        if args.len() > 1 {
-            return Err(EvalError::new(format!(
-                "__emit_time expected 0 or 1 argument(s), got {}",
-                args.len()
-            )));
-        }
-
-        let raw = if let Some(value) = args.first() {
-            expect_string_arg(value, "__emit_time", 1)?
-        } else {
-            self.read_system_clock("%H:%M")?
-        };
-        let swapped = swap_hhmm(&raw)?;
-        Ok(Value::String(swapped))
-    }
-
-    fn eval_builtin_lamron_time(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
-        if !args.is_empty() {
-            return Err(EvalError::new(format!(
-                "__lamron_time expected 0 argument(s), got {}",
-                args.len()
-            )));
-        }
-        Ok(Value::String(self.read_system_clock("%H:%M")?))
-    }
-
-    fn eval_builtin_etad_today(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
-        if !args.is_empty() {
-            return Err(EvalError::new(format!(
-                "__etad_today expected 0 argument(s), got {}",
-                args.len()
-            )));
-        }
-        Ok(Value::String(self.read_system_clock("%Y-%m-%d")?))
-    }
-
-    fn eval_builtin_read_file(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
-        if args.len() != 1 {
-            return Err(EvalError::new(format!(
-                "__read_file expected 1 argument(s), got {}",
-                args.len()
-            )));
-        }
-
-        let path = expect_string_arg(&args[0], "__read_file", 1)?;
-        let resolved = self.resolve_runtime_path(&path);
-        let contents = fs::read_to_string(&resolved).map_err(|err| {
-            EvalError::new(format!(
-                "failed to read file '{}': {}",
-                resolved.display(),
-                err
-            ))
-        })?;
-        Ok(Value::String(contents))
-    }
-
-    fn eval_builtin_write_file(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
-        if args.len() != 2 {
-            return Err(EvalError::new(format!(
-                "__write_file expected 2 argument(s), got {}",
-                args.len()
-            )));
-        }
-
-        let path = expect_string_arg(&args[0], "__write_file", 1)?;
-        let contents = args[1].to_string();
-        let resolved = self.resolve_runtime_path(&path);
-
-        if let Some(parent) = resolved.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                EvalError::new(format!(
-                    "failed to create directory '{}': {}",
-                    parent.display(),
-                    err
-                ))
-            })?;
-        }
-
-        fs::write(&resolved, &contents).map_err(|err| {
-            EvalError::new(format!(
-                "failed to write file '{}': {}",
-                resolved.display(),
-                err
-            ))
-        })?;
-
-        Ok(Value::Number(contents.len() as f64))
-    }
-
-    fn eval_builtin_delete_file(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
-        if args.len() != 1 {
-            return Err(EvalError::new(format!(
-                "__delete_file expected 1 argument(s), got {}",
-                args.len()
-            )));
-        }
-
-        let path = expect_string_arg(&args[0], "__delete_file", 1)?;
-        let resolved = self.resolve_runtime_path(&path);
-        match fs::remove_file(&resolved) {
-            Ok(()) => Ok(Value::Boolean(true)),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Value::Boolean(false)),
-            Err(err) => Err(EvalError::new(format!(
-                "failed to delete file '{}': {}",
-                resolved.display(),
-                err
-            ))),
-        }
-    }
-
-    fn eval_builtin_http_request(&mut self, args: Vec<Value>) -> Result<Value, EvalError> {
-        if args.len() < 2 || args.len() > 3 {
-            return Err(EvalError::new(format!(
-                "__http_request expected 2 or 3 argument(s), got {}",
-                args.len()
-            )));
-        }
-
-        let method = expect_string_arg(&args[0], "__http_request", 1)?;
-        let url = expect_string_arg(&args[1], "__http_request", 2)?;
-        let body = if args.len() == 3 {
-            expect_string_arg(&args[2], "__http_request", 3)?
-        } else {
-            String::new()
-        };
-
-        let response = send_http_request(&method, &url, &body)?;
-        Ok(Value::Array(vec![
-            Value::Number(response.status as f64),
-            Value::String(response.body),
-        ]))
-    }
-
-    fn read_system_clock(&self, format: &str) -> Result<String, EvalError> {
-        let output = Command::new("date")
-            .arg(format!("+{format}"))
-            .output()
-            .map_err(|err| EvalError::new(format!("failed to run 'date': {err}")))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(EvalError::new(format!(
-                "'date' command failed with status {}: {}",
-                output.status,
-                stderr.trim()
-            )));
-        }
-
-        let text = String::from_utf8(output.stdout)
-            .map_err(|_| EvalError::new("'date' command returned non-utf8 output"))?;
-        Ok(text.trim().to_string())
-    }
-
-    fn resolve_runtime_path(&self, path: &str) -> PathBuf {
-        let raw = PathBuf::from(path);
-        if raw.is_absolute() {
-            raw
-        } else {
-            self.base_dir.join(raw)
-        }
     }
 
     fn eval_prefix(&self, op: PrefixOp, rhs: Value) -> Result<Value, EvalError> {
@@ -940,6 +834,8 @@ impl Evaluator {
             InfixOp::NotEq => Ok(Value::Boolean(lhs != rhs)),
             InfixOp::Lt => numbers(lhs, rhs, |a, b| Value::Boolean(a < b), "compare"),
             InfixOp::Gt => numbers(lhs, rhs, |a, b| Value::Boolean(a > b), "compare"),
+            InfixOp::LtEq => numbers(lhs, rhs, |a, b| Value::Boolean(a <= b), "compare"),
+            InfixOp::GtEq => numbers(lhs, rhs, |a, b| Value::Boolean(a >= b), "compare"),
         }
     }
 }
@@ -950,467 +846,23 @@ impl Default for Evaluator {
     }
 }
 
-fn install_builtins(env: &Environment) {
-    env.define("input", Value::Builtin(BuiltinFunction::Input));
-    // Convenience alias for mirror-brain users.
-    env.define("tupni", Value::Builtin(BuiltinFunction::Input));
-    env.define("len", Value::Builtin(BuiltinFunction::Len));
-    env.define("nel", Value::Builtin(BuiltinFunction::Len));
-    env.define("to_number", Value::Builtin(BuiltinFunction::ToNumber));
-    env.define("rebmun_ot", Value::Builtin(BuiltinFunction::ToNumber));
-    env.define("range", Value::Builtin(BuiltinFunction::Range));
-    env.define("egnar", Value::Builtin(BuiltinFunction::Range));
-    env.define("type_of", Value::Builtin(BuiltinFunction::TypeOf));
-    env.define("fo_epyt", Value::Builtin(BuiltinFunction::TypeOf));
-    env.define("to_string", Value::Builtin(BuiltinFunction::ToString));
-    env.define("gnirts_ot", Value::Builtin(BuiltinFunction::ToString));
-    env.define("__emit_time", Value::Builtin(BuiltinFunction::EmitTime));
-    env.define("__lamron_time", Value::Builtin(BuiltinFunction::LamronTime));
-    env.define("__etad_today", Value::Builtin(BuiltinFunction::EtadToday));
-    env.define("__read_file", Value::Builtin(BuiltinFunction::ReadFile));
-    env.define("__write_file", Value::Builtin(BuiltinFunction::WriteFile));
-    env.define("__delete_file", Value::Builtin(BuiltinFunction::DeleteFile));
-    env.define(
-        "__http_request",
-        Value::Builtin(BuiltinFunction::HttpRequest),
-    );
-}
+fn collect_explicit_exports(program: &Program) -> Option<HashSet<String>> {
+    let mut names = HashSet::new();
+    let mut saw_export_stmt = false;
 
-fn iterable_to_values(iterable: Value) -> Result<Vec<Value>, EvalError> {
-    match iterable {
-        Value::Array(values) => Ok(values),
-        Value::String(text) => Ok(text
-            .chars()
-            .map(|ch| Value::String(ch.to_string()))
-            .collect()),
-        other => Err(EvalError::new(format!(
-            "for loop iterable must be array or string, got '{}'",
-            other
-        ))),
-    }
-}
-
-fn eval_builtin_len(args: Vec<Value>) -> Result<Value, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(format!(
-            "len expected 1 argument(s), got {}",
-            args.len()
-        )));
-    }
-
-    match &args[0] {
-        Value::String(text) => Ok(Value::Number(text.chars().count() as f64)),
-        Value::Array(values) => Ok(Value::Number(values.len() as f64)),
-        other => Err(EvalError::new(format!(
-            "len expects string or array, got '{}'",
-            other
-        ))),
-    }
-}
-
-fn eval_builtin_to_number(args: Vec<Value>) -> Result<Value, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(format!(
-            "to_number expected 1 argument(s), got {}",
-            args.len()
-        )));
-    }
-
-    match &args[0] {
-        Value::Number(number) => Ok(Value::Number(*number)),
-        Value::Boolean(value) => Ok(Value::Number(if *value { 1.0 } else { 0.0 })),
-        Value::String(text) => {
-            let parsed = text.trim().parse::<f64>().map_err(|_| {
-                EvalError::new(format!("to_number could not parse '{}' as number", text))
-            })?;
-            Ok(Value::Number(parsed))
-        }
-        other => Err(EvalError::new(format!(
-            "to_number expects number, boolean, or string, got '{}'",
-            other
-        ))),
-    }
-}
-
-fn eval_builtin_range(args: Vec<Value>) -> Result<Value, EvalError> {
-    if args.is_empty() || args.len() > 3 {
-        return Err(EvalError::new(format!(
-            "range expected 1 to 3 argument(s), got {}",
-            args.len()
-        )));
-    }
-
-    let to_i64 = |value: &Value| -> Result<i64, EvalError> {
-        let Value::Number(number) = value else {
-            return Err(EvalError::new("range arguments must be numbers"));
-        };
-
-        if !number.is_finite() || number.fract() != 0.0 {
-            return Err(EvalError::new("range arguments must be finite integers"));
-        }
-
-        if *number < i64::MIN as f64 || *number > i64::MAX as f64 {
-            return Err(EvalError::new("range argument is out of integer bounds"));
-        }
-
-        Ok(*number as i64)
-    };
-
-    let (start, end, step) = match args.len() {
-        1 => (0, to_i64(&args[0])?, 1),
-        2 => (to_i64(&args[0])?, to_i64(&args[1])?, 1),
-        3 => (to_i64(&args[0])?, to_i64(&args[1])?, to_i64(&args[2])?),
-        _ => unreachable!(),
-    };
-
-    if step == 0 {
-        return Err(EvalError::new("range step cannot be zero"));
-    }
-
-    let mut values = Vec::new();
-    let mut current = start;
-    if step > 0 {
-        while current < end {
-            values.push(Value::Number(current as f64));
-            current = current.saturating_add(step);
-        }
-    } else {
-        while current > end {
-            values.push(Value::Number(current as f64));
-            current = current.saturating_add(step);
-        }
-    }
-
-    Ok(Value::Array(values))
-}
-
-fn eval_builtin_type_of(args: Vec<Value>) -> Result<Value, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(format!(
-            "type_of expected 1 argument(s), got {}",
-            args.len()
-        )));
-    }
-
-    let name = match &args[0] {
-        Value::Number(_) => "number",
-        Value::Boolean(_) => "boolean",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Function(_) => "function",
-        Value::Builtin(_) => "builtin",
-        Value::Null => "null",
-    };
-
-    Ok(Value::String(name.to_string()))
-}
-
-fn eval_builtin_to_string(args: Vec<Value>) -> Result<Value, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::new(format!(
-            "to_string expected 1 argument(s), got {}",
-            args.len()
-        )));
-    }
-
-    if let Value::String(text) = &args[0] {
-        return Ok(Value::String(text.clone()));
-    }
-
-    Ok(Value::String(args[0].to_string()))
-}
-
-fn normalize_index(index: f64, len: usize, label: &'static str) -> Result<usize, EvalError> {
-    if !index.is_finite() || index.fract() != 0.0 {
-        return Err(EvalError::new(format!(
-            "{label} index must be a finite integer"
-        )));
-    }
-
-    if len == 0 {
-        return Err(EvalError::new(format!("{label} index out of bounds")));
-    }
-
-    let len_i64 =
-        i64::try_from(len).map_err(|_| EvalError::new(format!("{label} is too large to index")))?;
-
-    if index < i64::MIN as f64 || index > i64::MAX as f64 {
-        return Err(EvalError::new(format!(
-            "{label} index out of integer bounds"
-        )));
-    }
-
-    let raw = index as i64;
-    let normalized = if raw < 0 { len_i64 + raw } else { raw };
-
-    if normalized < 0 || normalized >= len_i64 {
-        return Err(EvalError::new(format!("{label} index out of bounds")));
-    }
-
-    usize::try_from(normalized)
-        .map_err(|_| EvalError::new(format!("{label} index conversion failed")))
-}
-
-fn expect_string_arg(
-    value: &Value,
-    builtin: &'static str,
-    position: usize,
-) -> Result<String, EvalError> {
-    match value {
-        Value::String(text) => Ok(text.clone()),
-        other => Err(EvalError::new(format!(
-            "{builtin} argument {position} must be a string, got '{}'",
-            other
-        ))),
-    }
-}
-
-fn swap_hhmm(input: &str) -> Result<String, EvalError> {
-    let (hours, minutes) = input
-        .split_once(':')
-        .ok_or_else(|| EvalError::new(format!("expected time in HH:MM format, got '{input}'")))?;
-
-    let is_valid = hours.len() == 2
-        && minutes.len() == 2
-        && hours.chars().all(|ch| ch.is_ascii_digit())
-        && minutes.chars().all(|ch| ch.is_ascii_digit());
-    if !is_valid {
-        return Err(EvalError::new(format!(
-            "expected time in HH:MM format, got '{input}'"
-        )));
-    }
-
-    Ok(format!("{minutes}:{hours}"))
-}
-
-#[derive(Debug)]
-struct ParsedHttpUrl {
-    scheme: String,
-    host: String,
-    port: u16,
-    path: String,
-}
-
-#[derive(Debug)]
-struct HttpResponse {
-    status: u16,
-    body: String,
-}
-
-fn send_http_request(method: &str, url: &str, body: &str) -> Result<HttpResponse, EvalError> {
-    let method = method.trim().to_uppercase();
-    if method.is_empty() || !method.chars().all(|ch| ch.is_ascii_uppercase()) {
-        return Err(EvalError::new(format!(
-            "unsupported HTTP method '{}'",
-            method
-        )));
-    }
-
-    let parsed = parse_http_url(url)?;
-    match parsed.scheme.as_str() {
-        "http" => send_http_plain(&method, &parsed, body),
-        "https" => send_https_via_openssl(&method, &parsed, body),
-        _ => Err(EvalError::new(format!(
-            "unsupported URL scheme '{}'",
-            parsed.scheme
-        ))),
-    }
-}
-
-fn parse_http_url(url: &str) -> Result<ParsedHttpUrl, EvalError> {
-    let (scheme, rest) = url
-        .split_once("://")
-        .ok_or_else(|| EvalError::new(format!("invalid URL '{}': missing scheme", url)))?;
-    let scheme = scheme.to_lowercase();
-    if scheme != "http" && scheme != "https" {
-        return Err(EvalError::new(format!(
-            "invalid URL '{}': scheme must be http or https",
-            url
-        )));
-    }
-
-    let (host_port, path) = match rest.split_once('/') {
-        Some((host_port, tail)) => (host_port, format!("/{}", tail)),
-        None => (rest, "/".to_string()),
-    };
-
-    if host_port.is_empty() || host_port.contains('@') {
-        return Err(EvalError::new(format!(
-            "invalid URL '{}': unsupported authority segment",
-            url
-        )));
-    }
-
-    let (host, port) = match host_port.rsplit_once(':') {
-        Some((host, raw_port))
-            if !host.contains(']') && raw_port.chars().all(|ch| ch.is_ascii_digit()) =>
+    for stmt in &program.statements {
+        if let Stmt::Export {
+            names: export_names,
+        } = stmt
         {
-            let port = raw_port.parse::<u16>().map_err(|_| {
-                EvalError::new(format!("invalid port '{}' in URL '{}'", raw_port, url))
-            })?;
-            (host.to_string(), port)
+            saw_export_stmt = true;
+            for name in export_names {
+                names.insert(name.clone());
+            }
         }
-        _ => {
-            let default_port = if scheme == "https" { 443 } else { 80 };
-            (host_port.to_string(), default_port)
-        }
-    };
-
-    if host.is_empty() {
-        return Err(EvalError::new(format!(
-            "invalid URL '{}': missing host",
-            url
-        )));
     }
 
-    Ok(ParsedHttpUrl {
-        scheme,
-        host,
-        port,
-        path,
-    })
-}
-
-fn send_http_plain(
-    method: &str,
-    parsed: &ParsedHttpUrl,
-    body: &str,
-) -> Result<HttpResponse, EvalError> {
-    let address = format!("{}:{}", parsed.host, parsed.port);
-    let socket_addr = address
-        .to_socket_addrs()
-        .map_err(|err| EvalError::new(format!("failed to resolve '{}': {}", address, err)))?
-        .next()
-        .ok_or_else(|| EvalError::new(format!("failed to resolve '{}': no addresses", address)))?;
-
-    let mut stream = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(10))
-        .map_err(|err| EvalError::new(format!("failed to connect to '{}': {}", address, err)))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .map_err(|err| EvalError::new(format!("failed to set read timeout: {}", err)))?;
-    stream
-        .set_write_timeout(Some(Duration::from_secs(10)))
-        .map_err(|err| EvalError::new(format!("failed to set write timeout: {}", err)))?;
-
-    let request = build_http_request(method, parsed, body);
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|err| EvalError::new(format!("failed to write HTTP request: {}", err)))?;
-    stream
-        .flush()
-        .map_err(|err| EvalError::new(format!("failed to flush HTTP request: {}", err)))?;
-
-    let mut raw = String::new();
-    stream
-        .read_to_string(&mut raw)
-        .map_err(|err| EvalError::new(format!("failed to read HTTP response: {}", err)))?;
-
-    parse_http_response(&raw)
-}
-
-fn send_https_via_openssl(
-    method: &str,
-    parsed: &ParsedHttpUrl,
-    body: &str,
-) -> Result<HttpResponse, EvalError> {
-    let connect_target = format!("{}:{}", parsed.host, parsed.port);
-    let request = build_http_request(method, parsed, body);
-
-    let mut child = Command::new("openssl")
-        .arg("s_client")
-        .arg("-quiet")
-        .arg("-connect")
-        .arg(&connect_target)
-        .arg("-servername")
-        .arg(&parsed.host)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|err| {
-            EvalError::new(format!(
-                "failed to start openssl for HTTPS request: {} (is 'openssl' installed?)",
-                err
-            ))
-        })?;
-
-    {
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| EvalError::new("failed to open stdin for openssl process"))?;
-        stdin
-            .write_all(request.as_bytes())
-            .map_err(|err| EvalError::new(format!("failed to send HTTPS request: {}", err)))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|err| EvalError::new(format!("failed to read HTTPS response: {}", err)))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(EvalError::new(format!(
-            "openssl HTTPS request failed: {}",
-            stderr.trim()
-        )));
-    }
-
-    let raw = String::from_utf8(output.stdout)
-        .map_err(|_| EvalError::new("HTTPS response contained non-utf8 data"))?;
-    parse_http_response(&raw)
-}
-
-fn build_http_request(method: &str, parsed: &ParsedHttpUrl, body: &str) -> String {
-    let host_header = if (parsed.scheme == "http" && parsed.port == 80)
-        || (parsed.scheme == "https" && parsed.port == 443)
-    {
-        parsed.host.clone()
-    } else {
-        format!("{}:{}", parsed.host, parsed.port)
-    };
-
-    let mut request = format!(
-        "{method} {} HTTP/1.1\r\nHost: {host_header}\r\nUser-Agent: tfel/0.1\r\nAccept: */*\r\nConnection: close\r\n",
-        parsed.path
-    );
-    if !body.is_empty() {
-        request.push_str("Content-Type: text/plain; charset=utf-8\r\n");
-        request.push_str(&format!("Content-Length: {}\r\n", body.len()));
-    }
-    request.push_str("\r\n");
-    request.push_str(body);
-    request
-}
-
-fn parse_http_response(raw: &str) -> Result<HttpResponse, EvalError> {
-    let trimmed = if let Some(idx) = raw.find("HTTP/") {
-        &raw[idx..]
-    } else {
-        raw
-    };
-
-    let (header_text, body) = if let Some((h, b)) = trimmed.split_once("\r\n\r\n") {
-        (h, b.to_string())
-    } else if let Some((h, b)) = trimmed.split_once("\n\n") {
-        (h, b.to_string())
-    } else {
-        return Err(EvalError::new(
-            "invalid HTTP response: missing header/body separator",
-        ));
-    };
-
-    let mut lines = header_text.lines();
-    let status_line = lines
-        .next()
-        .ok_or_else(|| EvalError::new("invalid HTTP response: missing status line"))?;
-    let status = status_line
-        .split_whitespace()
-        .nth(1)
-        .ok_or_else(|| EvalError::new("invalid HTTP response: malformed status line"))?
-        .parse::<u16>()
-        .map_err(|_| EvalError::new("invalid HTTP response: status code is not a number"))?;
-
-    Ok(HttpResponse { status, body })
+    if saw_export_stmt { Some(names) } else { None }
 }
 
 fn module_namespace(module_name: &str) -> Option<String> {

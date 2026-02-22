@@ -7,6 +7,7 @@ use crate::lexer::{Span, Token, TokenKind};
 pub struct ParseError {
     pub message: String,
     pub span: Span,
+    pub hint: Option<String>,
 }
 
 impl ParseError {
@@ -14,7 +15,15 @@ impl ParseError {
         Self {
             message: message.into(),
             span,
+            hint: None,
         }
+    }
+
+    pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
+        if self.hint.is_none() {
+            self.hint = Some(hint.into());
+        }
+        self
     }
 }
 
@@ -24,13 +33,23 @@ impl fmt::Display for ParseError {
             f,
             "parse error at {}..{}: {}",
             self.span.start, self.span.end, self.message
-        )
+        )?;
+        if let Some(hint) = &self.hint {
+            write!(f, "\n  hint: {hint}")?;
+        }
+        Ok(())
     }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ParserOptions {
+    pub strict_tfel: bool,
 }
 
 pub struct Parser {
     tokens: Vec<Token>,
     cursor: usize,
+    options: ParserOptions,
 }
 
 enum ImportAtom {
@@ -39,7 +58,11 @@ enum ImportAtom {
 }
 
 impl Parser {
-    pub fn new(mut tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Self::with_options(tokens, ParserOptions::default())
+    }
+
+    pub fn with_options(mut tokens: Vec<Token>, options: ParserOptions) -> Self {
         if !tokens
             .last()
             .is_some_and(|token| matches!(token.kind, TokenKind::Eof))
@@ -47,7 +70,11 @@ impl Parser {
             tokens.push(Token::new(TokenKind::Eof, Span::default()));
         }
 
-        Self { tokens, cursor: 0 }
+        Self {
+            tokens,
+            cursor: 0,
+            options,
+        }
     }
 
     pub fn parse_program(mut self) -> Result<Program, Vec<ParseError>> {
@@ -72,12 +99,12 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParseError> {
-        // Bootstrap parser path:
-        // normal-language style `let x = 10;` still works while we migrate to TFEL `10 = x`.
-        if self.check(|kind| matches!(kind, TokenKind::Let)) {
+        if self.check(|kind| matches!(kind, TokenKind::Let | TokenKind::Tel)) {
             self.parse_let_statement()
         } else if self.is_import_statement_start() {
             self.parse_import_statement()
+        } else if self.check(|kind| matches!(kind, TokenKind::Tropxe)) {
+            self.parse_export_statement()
         } else if self.check(|kind| matches!(kind, TokenKind::Print)) {
             self.parse_print_statement()
         } else if self.check(|kind| matches!(kind, TokenKind::If)) {
@@ -90,13 +117,24 @@ impl Parser {
             self.parse_function_definition()
         } else if self.check(|kind| matches!(kind, TokenKind::Nruter)) {
             self.parse_return_statement()
+        } else if self.check(|kind| matches!(kind, TokenKind::Break)) {
+            self.parse_break_statement()
+        } else if self.check(|kind| matches!(kind, TokenKind::Continue)) {
+            self.parse_continue_statement()
         } else {
             self.parse_assignment_or_expression_statement()
         }
     }
 
     fn parse_let_statement(&mut self) -> Result<Stmt, ParseError> {
-        self.advance();
+        let keyword = self.advance();
+        if matches!(keyword.kind, TokenKind::Let) && self.options.strict_tfel {
+            return Err(
+                ParseError::new("`let` is disabled in --strict-tfel mode", keyword.span)
+                    .with_hint("use `tel name = value;` instead"),
+            );
+        }
+
         let name = self.expect_ident()?;
         self.expect(
             |kind| matches!(kind, TokenKind::Assign),
@@ -107,6 +145,36 @@ impl Parser {
         self.consume_semicolon();
 
         Ok(Stmt::Let { name, value })
+    }
+
+    fn parse_break_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.advance();
+        self.consume_semicolon();
+        Ok(Stmt::Break)
+    }
+
+    fn parse_continue_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.advance();
+        self.consume_semicolon();
+        Ok(Stmt::Continue)
+    }
+
+    fn parse_export_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.advance(); // consume `tropxe`
+
+        let mut names = Vec::new();
+        loop {
+            names.push(self.expect_ident_with_message("expected identifier after 'tropxe'")?);
+
+            if self.check(|kind| matches!(kind, TokenKind::Comma)) {
+                self.advance();
+                continue;
+            }
+            break;
+        }
+
+        self.consume_semicolon();
+        Ok(Stmt::Export { names })
     }
 
     fn parse_print_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -129,12 +197,28 @@ impl Parser {
         let value = self.parse_expression(Precedence::Lowest)?;
 
         if self.check(|kind| matches!(kind, TokenKind::Assign)) {
-            // TFEL assignment shape is intentionally mirrored:
-            // normal `name = value` becomes `value = name`.
             self.advance(); // consume '='
-            let name = self.expect_ident_with_message(
-                "expected identifier on right side of assignment (TFEL: value = name)",
-            )?;
+
+            let rhs = self.current().clone();
+            let name = match rhs.kind {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    name
+                }
+                _ => {
+                    let mut err = ParseError::new(
+                        "expected identifier on right side of assignment (TFEL: value = name)",
+                        rhs.span,
+                    );
+                    if let Expr::Identifier(lhs) = &value {
+                        err = err.with_hint(format!(
+                            "this looks like normal assignment. TFEL uses `value = name`; try `<value> = {lhs};`"
+                        ));
+                    }
+                    return Err(err);
+                }
+            };
+
             self.consume_semicolon();
             return Ok(Stmt::Assign { name, value });
         }
@@ -333,7 +417,21 @@ impl Parser {
                 Ok(expr)
             }
             TokenKind::LBracket => self.parse_array_literal(),
-            _ => Err(ParseError::new("expected expression", token.span)),
+            _ => {
+                let mut err = ParseError::new(
+                    format!(
+                        "expected expression, found {}",
+                        describe_token_kind(&token.kind)
+                    ),
+                    token.span,
+                );
+                if matches!(token.kind, TokenKind::Assign) {
+                    err = err.with_hint(
+                        "assignment in TFEL is mirrored: write `value = name`, not `name = value`",
+                    );
+                }
+                Err(err)
+            }
         }
     }
 
@@ -357,6 +455,8 @@ impl Parser {
             TokenKind::NotEq => (InfixOp::NotEq, Precedence::Equality),
             TokenKind::Lt => (InfixOp::Lt, Precedence::Comparison),
             TokenKind::Gt => (InfixOp::Gt, Precedence::Comparison),
+            TokenKind::LtEq => (InfixOp::LtEq, Precedence::Comparison),
+            TokenKind::GtEq => (InfixOp::GtEq, Precedence::Comparison),
             _ => {
                 return Err(ParseError::new(
                     "expected infix operator",
@@ -562,13 +662,18 @@ impl Parser {
 
             if matches!(
                 self.current().kind,
-                TokenKind::Print
+                TokenKind::Let
+                    | TokenKind::Tel
+                    | TokenKind::Print
                     | TokenKind::If
                     | TokenKind::Else
                     | TokenKind::Rof
                     | TokenKind::Elihw
                     | TokenKind::Fed
                     | TokenKind::Nruter
+                    | TokenKind::Break
+                    | TokenKind::Continue
+                    | TokenKind::Tropxe
                     | TokenKind::Tropmi
             ) {
                 return;
@@ -633,10 +738,28 @@ fn precedence_of(kind: &TokenKind) -> Precedence {
         TokenKind::Ro => Precedence::LogicalOr,
         TokenKind::Dna => Precedence::LogicalAnd,
         TokenKind::Eq | TokenKind::NotEq => Precedence::Equality,
-        TokenKind::Lt | TokenKind::Gt => Precedence::Comparison,
+        TokenKind::Lt | TokenKind::Gt | TokenKind::LtEq | TokenKind::GtEq => Precedence::Comparison,
         TokenKind::Plus | TokenKind::Minus => Precedence::Sum,
         TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Product,
         TokenKind::LBracket | TokenKind::LParen => Precedence::Postfix,
         _ => Precedence::Lowest,
+    }
+}
+
+fn describe_token_kind(kind: &TokenKind) -> String {
+    match kind {
+        TokenKind::Ident(name) => format!("identifier '{name}'"),
+        TokenKind::Number(value) => format!("number '{value}'"),
+        TokenKind::String(value) => format!("string \"{value}\""),
+        TokenKind::Assign => "'='".to_string(),
+        TokenKind::Semicolon => "';'".to_string(),
+        TokenKind::LParen => "'('".to_string(),
+        TokenKind::RParen => "')'".to_string(),
+        TokenKind::LBrace => "'{'".to_string(),
+        TokenKind::RBrace => "'}'".to_string(),
+        TokenKind::LBracket => "'['".to_string(),
+        TokenKind::RBracket => "']'".to_string(),
+        TokenKind::Eof => "end of file".to_string(),
+        other => format!("token {:?}", other),
     }
 }

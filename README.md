@@ -21,6 +21,18 @@ For the full design rant and spec, read `TFEL_LANGUAGE_SPEC.md`.
 cargo run -- examples/hello.tfel
 ```
 
+Run logical (non-mirrored) TFEL directly:
+
+```bash
+cargo run -- --logical examples/hello.logical.tfel
+```
+
+Mirror a logical file into on-disk `.tfel` form:
+
+```bash
+cargo run -- mirror program.logical.tfel program.tfel
+```
+
 ## How code is processed
 
 TFEL source files are intentionally stored in a mirrored form.
@@ -42,8 +54,14 @@ That means there are two views of TFEL:
 Write code in logical TFEL first, then mirror it into a `.tfel` file:
 
 ```bash
-cat program.logical.tfel | rev | tac > program.tfel
+cargo run -- mirror program.logical.tfel program.tfel
 cargo run -- program.tfel
+```
+
+You can also skip mirroring and run logical TFEL directly:
+
+```bash
+cargo run -- --logical program.logical.tfel
 ```
 
 ## Logical TFEL syntax guide
@@ -57,7 +75,13 @@ Everything below is shown in logical syntax (after preprocessing).
 "hello" = msg;
 ```
 
-`let` also exists for compatibility:
+`tel` is the strict declaration keyword:
+
+```tfel
+tel x = 10;
+```
+
+`let` exists for compatibility (disabled in `--strict-tfel` mode):
 
 ```tfel
 let x = 10;
@@ -83,6 +107,15 @@ elihw )i < 5( } i + 1 = i; {
 rof item ni range)0, 3( } print)item(; {
 ```
 
+Loop control:
+
+```tfel
+kaerb;
+eunitnoc;
+```
+
+Comparisons include `<=` and `>=`.
+
 ### Functions
 
 ```tfel
@@ -105,12 +138,25 @@ import "math";
 from "math" import "answer";
 ```
 
+In `--strict-tfel` mode, only mirrored keywords are accepted (`tropmi`, `morf`).
+
 Import-all exposes module namespace aliases too:
 
 ```tfel
 lib/emit tropmi;
 emit.lamron)(;
 ```
+
+### Exports
+
+Modules can define explicit exports:
+
+```tfel
+tropxe answer, format;
+40 = answer;
+```
+
+If no `tropxe` statement is present, all non-builtin top-level names are exported (legacy behavior).
 
 ## Builtins
 
@@ -128,6 +174,21 @@ Internal primitives used by libraries:
 - time/date: `__emit_time`, `__lamron_time`, `__etad_today`
 - file I/O: `__read_file`, `__write_file`, `__delete_file`
 - network: `__http_request(method, url, body?)`
+
+`__read_file` / `__write_file` / `__delete_file` are blocked unless `--allow-fs` is passed.  
+`__http_request` is blocked unless `--allow-net` is passed.
+
+## CLI modes
+
+```bash
+cargo run -- [--logical] [--strict-tfel] [--allow-fs] [--allow-net] <path>
+cargo run -- mirror <logical-input> <mirrored-output>
+```
+
+- `--logical`: parse input as logical TFEL (skip mirror preprocessing)
+- `--strict-tfel`: disable compatibility syntax and require explicit declarations before assignment
+- `--allow-fs`: enable filesystem builtins
+- `--allow-net`: enable network builtin
 
 ## Libraries in this repo
 
@@ -170,6 +231,12 @@ A more real-world-ish mini project:
 cargo run -- examples/service_health_report.tfel
 ```
 
+Network + filesystem showpiece:
+
+```bash
+cargo run -- --allow-net --allow-fs examples/service_health_reporter.tfel
+```
+
 ```bash
 cargo run -- examples/hello.tfel
 cargo run -- examples/fibonacci.tfel
@@ -195,6 +262,7 @@ cargo run -- examples/emit_normal_demo.tfel
 cargo run -- examples/file_demo.tfel
 cargo run -- examples/weekly_report_showcase.tfel
 cargo run -- examples/service_health_report.tfel
+cargo run -- --allow-net --allow-fs examples/service_health_reporter.tfel
 cargo run -- examples/http_demo.tfel
 cargo run -- examples/api_request_demo.tfel
 ```

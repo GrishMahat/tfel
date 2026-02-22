@@ -12,8 +12,7 @@ impl Program {
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    // Legacy bootstrap form; will be replaced by right-to-left assignment parsing.
-    // Normal-language equivalent: `let x = 10`.
+    // Explicit declaration statement.
     Let {
         name: String,
         value: Expr,
@@ -47,6 +46,11 @@ pub enum Stmt {
         body: Block,
     },
     Return(Option<Expr>),
+    Break,
+    Continue,
+    Export {
+        names: Vec<String>,
+    },
     Import {
         module: String,
         item: Option<String>,
@@ -101,4 +105,6 @@ pub enum InfixOp {
     NotEq,
     Lt,
     Gt,
+    LtEq,
+    GtEq,
 }

@@ -13,4 +13,4 @@
 ;"regetni evitagen-non a eb tsum n"
 } (0 =! 1 % n or 0 < n) fi
 ;n = ((tpmorp)tupni)rebmun_ot
-;tpmorp = "Enter n for fib(n): "
+;tpmorp = "Enter n for fib(n) (<= 1476 for finite f64): "

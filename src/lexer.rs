@@ -34,10 +34,14 @@ pub enum TokenKind {
     // Bootstrap keyword retained while parser is incrementally migrated.
     // Normal-language equivalent: this is the usual `let`.
     Let,
+    Tel,
     Fed,
     Tropmi,
     Morf,
+    Tropxe,
     Nruter,
+    Break,
+    Continue,
     If,
     Else,
     Rof,
@@ -61,6 +65,8 @@ pub enum TokenKind {
     NotEq,
     Lt,
     Gt,
+    LtEq,
+    GtEq,
 
     Comma,
     Semicolon,
@@ -118,8 +124,29 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, Vec<LexError>> {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LexOptions {
+    pub strict_tfel: bool,
+}
+
+pub fn tokenize_with_options(
+    input: &str,
+    options: LexOptions,
+) -> Result<Vec<Token>, Vec<LexError>> {
+    let report = tokenize_with_report_options(input, options);
+    if report.has_errors() {
+        Err(report.errors)
+    } else {
+        Ok(report.tokens)
+    }
+}
+
 pub fn tokenize_with_report(input: &str) -> LexReport {
-    let mut lexer = Lexer::new(input);
+    tokenize_with_report_options(input, LexOptions::default())
+}
+
+pub fn tokenize_with_report_options(input: &str, options: LexOptions) -> LexReport {
+    let mut lexer = Lexer::new(input, options);
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
 
@@ -142,11 +169,16 @@ pub fn tokenize_with_report(input: &str) -> LexReport {
 struct Lexer<'a> {
     input: &'a str,
     position: usize,
+    options: LexOptions,
 }
 
 impl<'a> Lexer<'a> {
-    fn new(input: &'a str) -> Self {
-        Self { input, position: 0 }
+    fn new(input: &'a str, options: LexOptions) -> Self {
+        Self {
+            input,
+            position: 0,
+            options,
+        }
     }
 
     fn next_token(&mut self) -> Result<Token, LexError> {
@@ -196,6 +228,14 @@ impl<'a> Lexer<'a> {
             '*' => Token::new(TokenKind::Star, Span::new(start, self.position)),
             '/' => Token::new(TokenKind::Slash, Span::new(start, self.position)),
             '%' => Token::new(TokenKind::Percent, Span::new(start, self.position)),
+            '<' if self.peek_char().map(swap_bracket) == Some('=') => {
+                self.bump_char();
+                Token::new(TokenKind::LtEq, Span::new(start, self.position))
+            }
+            '>' if self.peek_char().map(swap_bracket) == Some('=') => {
+                self.bump_char();
+                Token::new(TokenKind::GtEq, Span::new(start, self.position))
+            }
             '<' => Token::new(TokenKind::Lt, Span::new(start, self.position)),
             '>' => Token::new(TokenKind::Gt, Span::new(start, self.position)),
             ',' => Token::new(TokenKind::Comma, Span::new(start, self.position)),
@@ -224,13 +264,23 @@ impl<'a> Lexer<'a> {
 
         let span = Span::new(start, self.position);
         let ident = &self.input[start..self.position];
+        let strict = self.options.strict_tfel;
         // Most TFEL keywords are normal keywords mirrored in a spooky syntax mirror.
         let kind = match ident {
             "let" => TokenKind::Let,
+            "tel" => TokenKind::Tel,
             "fed" => TokenKind::Fed,
-            "tropmi" | "import" => TokenKind::Tropmi,
-            "morf" | "from" => TokenKind::Morf,
+            "tropmi" => TokenKind::Tropmi,
+            "import" if !strict => TokenKind::Tropmi,
+            "morf" => TokenKind::Morf,
+            "from" if !strict => TokenKind::Morf,
+            "tropxe" => TokenKind::Tropxe,
+            "export" if !strict => TokenKind::Tropxe,
             "nruter" => TokenKind::Nruter,
+            "kaerb" => TokenKind::Break,
+            "break" if !strict => TokenKind::Break,
+            "eunitnoc" => TokenKind::Continue,
+            "continue" if !strict => TokenKind::Continue,
             "if" => TokenKind::If,
             "else" => TokenKind::Else,
             "rof" => TokenKind::Rof,

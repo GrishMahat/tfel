@@ -100,3 +100,64 @@ fn file_library_round_trip_write_read_delete() {
 
     let _ = fs::remove_dir_all(dir);
 }
+
+#[test]
+fn supports_less_equal_and_greater_equal_comparisons() {
+    let tokens = tokenize("1 + 2 <= 3 dna 5 >= 4;").expect("lexing should pass");
+    let program = Parser::new(tokens)
+        .parse_program()
+        .expect("parser should pass");
+
+    let mut eval = Evaluator::new();
+    let value = eval.eval_program(&program).expect("evaluation should pass");
+    assert_eq!(value, Value::Boolean(true));
+}
+
+#[test]
+fn while_loop_supports_break_and_continue() {
+    let src = "\
+        0 = i; \
+        0 = sum; \
+        elihw )i < 7( } \
+            i + 1 = i; \
+            if )i == 3( } eunitnoc; { \
+            if )i == 6( } kaerb; { \
+            sum + i = sum; \
+        { \
+        sum;";
+    let tokens = tokenize(src).expect("lexing should pass");
+    let program = Parser::new(tokens)
+        .parse_program()
+        .expect("parser should pass");
+
+    let mut eval = Evaluator::new();
+    let value = eval.eval_program(&program).expect("evaluation should pass");
+    assert_eq!(value, Value::Number(12.0));
+}
+
+#[test]
+fn explicit_exports_limit_imported_symbols() {
+    let dir = create_temp_dir("exports-limit");
+    let module_path = dir.join("math.tfel");
+    write_module_preprocessed(&module_path, "tropxe answer;\n40 = answer;\n99 = hidden;\n");
+
+    let tokens = tokenize("\"math\" tropmi; answer;").expect("lexing should pass");
+    let program = Parser::new(tokens)
+        .parse_program()
+        .expect("parser should pass");
+
+    let mut eval = Evaluator::with_base_dir(dir.clone());
+    let value = eval.eval_program(&program).expect("evaluation should pass");
+    assert_eq!(value, Value::Number(40.0));
+
+    let hidden_tokens = tokenize("hidden morf math tropmi;").expect("lexing should pass");
+    let hidden_program = Parser::new(hidden_tokens)
+        .parse_program()
+        .expect("parser should pass");
+    let hidden_err = eval
+        .eval_program(&hidden_program)
+        .expect_err("hidden export should not be importable");
+    assert!(hidden_err.message.contains("does not export 'hidden'"));
+
+    let _ = fs::remove_dir_all(dir);
+}

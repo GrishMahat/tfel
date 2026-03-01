@@ -174,8 +174,7 @@ fn explicit_exports_limit_imported_symbols() {
 
 #[test]
 fn object_literal_and_string_key_indexing_work() {
-    let tokens =
-        tokenize("}\"name\": \"tfel\", count: 2{]\"name\"[;").expect("lexing should pass");
+    let tokens = tokenize("}\"name\": \"tfel\", count: 2{]\"name\"[;").expect("lexing should pass");
     let program = Parser::new(tokens)
         .parse_program()
         .expect("parser should pass");

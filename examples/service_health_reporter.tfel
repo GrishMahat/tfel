@@ -90,6 +90,10 @@
 ;ydob = ""    
 ;sutats = 0    
 ;tpmetta = 1    
+
+{    
+;["offline fallback )set run_live_checks = true(" ,0 ,0 ,"DOWN" ,0 ,lru ,eman] return        
+} (eslaf == skcehc_evil_nur) fi    
 } (stpmetta_xam ,lru ,eman)ecivres_kcehc def
 
 {
@@ -101,6 +105,8 @@
 { ;"DEGRADED" return } (005 < sutats and 003 => sutats) fi    
 { ;"UP" return } (003 < sutats and 002 => sutats) fi    
 } (sutats)sutats_yfissalc def
+
+;skcehc_evil_nur = eslaf
 
 ;import elif/bil
 ;import ptth/til

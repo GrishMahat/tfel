@@ -121,6 +121,7 @@ pub(super) fn eval_builtin_type_of(args: Vec<Value>) -> Result<Value, EvalError>
         Value::Boolean(_) => "boolean",
         Value::String(_) => "string",
         Value::Array(_) => "array",
+        Value::Object(_) => "object",
         Value::Function(_) => "function",
         Value::Builtin(_) => "builtin",
         Value::Null => "null",

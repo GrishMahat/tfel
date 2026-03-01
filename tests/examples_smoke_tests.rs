@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tfel::evaluator::Evaluator;
+use tfel::evaluator::{Evaluator, EvaluatorOptions, RuntimePermissions};
 use tfel::lexer::tokenize;
 use tfel::parser::Parser;
 use tfel::preprocessor::preprocess_source;
@@ -20,7 +20,17 @@ fn run_example(path: &Path) -> Result<String, String> {
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .to_path_buf();
-    let mut evaluator = Evaluator::with_base_dir(base_dir);
+    let mut evaluator = Evaluator::with_base_dir_and_options(
+        base_dir,
+        EvaluatorOptions {
+            strict_tfel: false,
+            permissions: RuntimePermissions {
+                allow_fs: true,
+                allow_net: false,
+            },
+            module_search_paths: Vec::new(),
+        },
+    );
     evaluator
         .eval_program(&program)
         .map(|value| value.to_string())

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -19,6 +19,7 @@ pub enum Value {
     Boolean(bool),
     String(String),
     Array(Vec<Value>),
+    Object(BTreeMap<String, Value>),
     Function(FunctionValue),
     Builtin(BuiltinFunction),
     Null,
@@ -76,6 +77,7 @@ impl PartialEq for Value {
             (Value::Boolean(a), Value::Boolean(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Array(a), Value::Array(b)) => a == b,
+            (Value::Object(a), Value::Object(b)) => a == b,
             (Value::Builtin(a), Value::Builtin(b)) => a == b,
             (Value::Null, Value::Null) => true,
             _ => false,
@@ -96,6 +98,14 @@ impl fmt::Display for Value {
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "[{}]", rendered)
+            }
+            Value::Object(entries) => {
+                let rendered = entries
+                    .iter()
+                    .map(|(key, value)| format!("\"{}\": {}", key, value))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{{{}}}", rendered)
             }
             Value::Function(func) => write!(f, "<function {} / {}>", func.name, func.params.len()),
             Value::Builtin(BuiltinFunction::Input) => write!(f, "<builtin input>"),
@@ -196,17 +206,15 @@ impl RuntimePermissions {
 
 impl Default for RuntimePermissions {
     fn default() -> Self {
-        Self {
-            allow_fs: true,
-            allow_net: true,
-        }
+        Self::restricted()
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct EvaluatorOptions {
     pub strict_tfel: bool,
     pub permissions: RuntimePermissions,
+    pub module_search_paths: Vec<PathBuf>,
 }
 
 impl Evaluator {
@@ -351,7 +359,9 @@ impl Evaluator {
     }
 
     fn eval_import(&mut self, module_name: &str, item: Option<&str>) -> Result<(), EvalError> {
-        let module_path = self.resolve_module_path(module_name);
+        let module_path = self
+            .resolve_module_path(module_name)
+            .map_err(|err| err.with_context(format!("while importing module '{module_name}'")))?;
         let exports = self
             .load_module_exports(&module_path)
             .map_err(|err| err.with_context(format!("while importing module '{module_name}'")))?;
@@ -384,7 +394,7 @@ impl Evaluator {
         Ok(())
     }
 
-    fn resolve_module_path(&self, module_name: &str) -> PathBuf {
+    fn resolve_module_path(&self, module_name: &str) -> Result<PathBuf, EvalError> {
         let raw = PathBuf::from(module_name);
         let candidate_paths = if raw.extension().is_some() {
             vec![raw]
@@ -396,29 +406,43 @@ impl Evaluator {
             ]
         };
 
-        for candidate in candidate_paths {
-            let resolved = if candidate.is_absolute() {
-                candidate
-            } else {
-                self.base_dir.join(candidate)
-            };
+        let mut roots = vec![self.base_dir.clone()];
+        roots.extend(self.options.module_search_paths.iter().cloned());
 
-            if resolved.exists() {
-                return fs::canonicalize(&resolved).unwrap_or(resolved);
+        let mut searched = Vec::<PathBuf>::new();
+        let mut seen = HashSet::<PathBuf>::new();
+
+        for candidate in candidate_paths {
+            if candidate.is_absolute() {
+                if seen.insert(candidate.clone()) {
+                    searched.push(candidate.clone());
+                }
+                if candidate.exists() {
+                    return Ok(fs::canonicalize(&candidate).unwrap_or(candidate));
+                }
+                continue;
+            }
+
+            for root in &roots {
+                let resolved = root.join(&candidate);
+                if seen.insert(resolved.clone()) {
+                    searched.push(resolved.clone());
+                }
+                if resolved.exists() {
+                    return Ok(fs::canonicalize(&resolved).unwrap_or(resolved));
+                }
             }
         }
 
-        let fallback = if module_name.ends_with(".tfel") {
-            PathBuf::from(module_name)
-        } else {
-            PathBuf::from(module_name).with_extension("tfel")
-        };
-        let resolved = if fallback.is_absolute() {
-            fallback
-        } else {
-            self.base_dir.join(fallback)
-        };
-        fs::canonicalize(&resolved).unwrap_or(resolved)
+        let mut error = EvalError::new(format!("module '{module_name}' was not found"));
+        let searched_lines = searched
+            .iter()
+            .map(|path| format!("  - {}", path.display()))
+            .collect::<Vec<_>>();
+        if !searched_lines.is_empty() {
+            error = error.with_hint(format!("searched paths:\n{}", searched_lines.join("\n")));
+        }
+        Err(error)
     }
 
     fn load_module_exports(
@@ -580,7 +604,7 @@ impl Evaluator {
                 .get(name)
                 .ok_or_else(|| unknown_variable_error(&self.env, name)),
             Expr::Number(value) => Ok(Value::Number(*value)),
-            Expr::String(value) => Ok(Value::String(value.clone())),
+            Expr::String(value) => self.eval_string_literal(value),
             Expr::Boolean(value) => Ok(Value::Boolean(*value)),
             Expr::Array(items) => {
                 let mut evaluated = Vec::with_capacity(items.len());
@@ -588,6 +612,13 @@ impl Evaluator {
                     evaluated.push(self.eval_expr(item)?);
                 }
                 Ok(Value::Array(evaluated))
+            }
+            Expr::Object(entries) => {
+                let mut evaluated = BTreeMap::new();
+                for (key, value_expr) in entries {
+                    evaluated.insert(key.clone(), self.eval_expr(value_expr)?);
+                }
+                Ok(Value::Object(evaluated))
             }
             Expr::Index { target, index } => {
                 let target = self.eval_expr(target)?;
@@ -608,11 +639,19 @@ impl Evaluator {
                             .map(|ch| Value::String(ch.to_string()))
                             .ok_or_else(|| EvalError::new("string index out of bounds"))
                     }
+                    (Value::Object(entries), Value::String(key)) => entries
+                        .get(&key)
+                        .cloned()
+                        .ok_or_else(|| EvalError::new(format!("object key '{}' not found", key))),
+                    (Value::Object(_), other) => Err(EvalError::new(format!(
+                        "object key must be a string, got '{}'",
+                        other
+                    ))),
                     (_, Value::Number(_)) => Err(EvalError::new(
-                        "indexing currently supports arrays and strings only",
+                        "indexing currently supports arrays, strings, and objects",
                     )),
                     (_, other) => Err(EvalError::new(format!(
-                        "index value must be a number, got '{}'",
+                        "index value must be a number )arrays/strings( or string )objects(, got '{}'",
                         other
                     ))),
                 }
@@ -652,6 +691,87 @@ impl Evaluator {
                 let rhs = self.eval_expr(rhs)?;
                 self.eval_infix(lhs, *op, rhs)
             }
+        }
+    }
+
+    fn eval_string_literal(&mut self, value: &str) -> Result<Value, EvalError> {
+        if !value.contains("${") {
+            return Ok(Value::String(value.to_string()));
+        }
+        self.interpolate_string(value).map(Value::String)
+    }
+
+    fn interpolate_string(&mut self, template: &str) -> Result<String, EvalError> {
+        let mut out = String::new();
+        let mut cursor = 0usize;
+
+        while let Some(found) = template[cursor..].find("${") {
+            let open = cursor + found;
+            out.push_str(&template[cursor..open]);
+            let expr_start = open + 2;
+            let expr_end = find_interpolation_end(template, expr_start).ok_or_else(|| {
+                EvalError::new("unterminated string interpolation (missing '}')")
+                    .with_hint("close interpolation segments as `${expr}`")
+            })?;
+            let expression = template[expr_start..expr_end].trim();
+            if expression.is_empty() {
+                return Err(EvalError::new(
+                    "empty interpolation expression `${}` is not allowed",
+                ));
+            }
+
+            let value = self
+                .eval_interpolation_expression(expression)
+                .map_err(|err| err.with_context("while evaluating string interpolation"))?;
+            out.push_str(&value.to_string());
+            cursor = expr_end + 1;
+        }
+
+        out.push_str(&template[cursor..]);
+        Ok(out)
+    }
+
+    fn eval_interpolation_expression(&mut self, expression: &str) -> Result<Value, EvalError> {
+        let source = format!("{expression};");
+        let tokens = tokenize_with_options(
+            &source,
+            LexOptions {
+                strict_tfel: self.options.strict_tfel,
+            },
+        )
+        .map_err(|errors| {
+            let first = &errors[0];
+            EvalError::new(format!(
+                "invalid interpolation expression '{}': {} at {}..{}",
+                expression, first.message, first.span.start, first.span.end
+            ))
+        })?;
+        let program = Parser::with_options(
+            tokens,
+            ParserOptions {
+                strict_tfel: self.options.strict_tfel,
+            },
+        )
+        .parse_program()
+        .map_err(|errors| {
+            let first = &errors[0];
+            EvalError::new(format!(
+                "invalid interpolation expression '{}': {} at {}..{}",
+                expression, first.message, first.span.start, first.span.end
+            ))
+        })?;
+
+        if program.statements.len() != 1 {
+            return Err(EvalError::new(
+                "interpolation must contain exactly one expression",
+            ));
+        }
+
+        match &program.statements[0] {
+            Stmt::Expr(expr) => self.eval_expr(expr),
+            _ => Err(EvalError::new(
+                "interpolation must be an expression, not a statement",
+            )),
         }
     }
 
@@ -955,7 +1075,52 @@ fn is_truthy(value: &Value) -> bool {
         Value::Number(n) => *n != 0.0,
         Value::String(s) => !s.is_empty(),
         Value::Array(items) => !items.is_empty(),
+        Value::Object(entries) => !entries.is_empty(),
         Value::Function(_) => true,
         Value::Builtin(_) => true,
     }
+}
+
+fn find_interpolation_end(template: &str, start: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (offset, ch) in template[start..].char_indices() {
+        let idx = start + offset;
+
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if ch == '"' {
+            in_string = true;
+            continue;
+        }
+
+        if ch == '{' {
+            depth += 1;
+            continue;
+        }
+
+        if ch == '}' {
+            if depth == 0 {
+                return Some(idx);
+            }
+            depth -= 1;
+        }
+    }
+
+    None
 }

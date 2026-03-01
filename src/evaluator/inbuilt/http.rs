@@ -56,33 +56,39 @@ struct HttpResponse {
 fn send_http_request(method: &str, url: &str, body: &str) -> Result<HttpResponse, EvalError> {
     let method = method.trim().to_uppercase();
     if method.is_empty() || !method.chars().all(|ch| ch.is_ascii_uppercase()) {
-        return Err(EvalError::new(format!(
-            "unsupported HTTP method '{}'",
-            method
-        )));
+        return Err(http_error(
+            url,
+            "parse",
+            None,
+            format!("unsupported HTTP method '{}'", method),
+        ));
     }
 
     let parsed = parse_http_url(url)?;
     match parsed.scheme.as_str() {
-        "http" => send_http_plain(&method, &parsed, body),
-        "https" => send_https_via_openssl(&method, &parsed, body),
-        _ => Err(EvalError::new(format!(
-            "unsupported URL scheme '{}'",
-            parsed.scheme
-        ))),
+        "http" => send_http_plain(&method, url, &parsed, body),
+        "https" => send_https_via_openssl(&method, url, &parsed, body),
+        _ => Err(http_error(
+            url,
+            "parse",
+            Some(&parsed.host_port()),
+            format!("unsupported URL scheme '{}'", parsed.scheme),
+        )),
     }
 }
 
 fn parse_http_url(url: &str) -> Result<ParsedHttpUrl, EvalError> {
     let (scheme, rest) = url
         .split_once("://")
-        .ok_or_else(|| EvalError::new(format!("invalid URL '{}': missing scheme", url)))?;
+        .ok_or_else(|| http_error(url, "parse", None, "invalid URL: missing scheme"))?;
     let scheme = scheme.to_lowercase();
     if scheme != "http" && scheme != "https" {
-        return Err(EvalError::new(format!(
-            "invalid URL '{}': scheme must be http or https",
-            url
-        )));
+        return Err(http_error(
+            url,
+            "parse",
+            None,
+            format!("invalid URL '{}': scheme must be http or https", url),
+        ));
     }
 
     let (host_port, path) = match rest.split_once('/') {
@@ -91,10 +97,12 @@ fn parse_http_url(url: &str) -> Result<ParsedHttpUrl, EvalError> {
     };
 
     if host_port.is_empty() || host_port.contains('@') {
-        return Err(EvalError::new(format!(
-            "invalid URL '{}': unsupported authority segment",
-            url
-        )));
+        return Err(http_error(
+            url,
+            "parse",
+            None,
+            format!("invalid URL '{}': unsupported authority segment", url),
+        ));
     }
 
     let (host, port) = match host_port.rsplit_once(':') {
@@ -102,7 +110,12 @@ fn parse_http_url(url: &str) -> Result<ParsedHttpUrl, EvalError> {
             if !host.contains(']') && raw_port.chars().all(|ch| ch.is_ascii_digit()) =>
         {
             let port = raw_port.parse::<u16>().map_err(|_| {
-                EvalError::new(format!("invalid port '{}' in URL '{}'", raw_port, url))
+                http_error(
+                    url,
+                    "parse",
+                    Some(host_port),
+                    format!("invalid port '{}' in URL '{}'", raw_port, url),
+                )
             })?;
             (host.to_string(), port)
         }
@@ -113,10 +126,12 @@ fn parse_http_url(url: &str) -> Result<ParsedHttpUrl, EvalError> {
     };
 
     if host.is_empty() {
-        return Err(EvalError::new(format!(
-            "invalid URL '{}': missing host",
-            url
-        )));
+        return Err(http_error(
+            url,
+            "parse",
+            None,
+            format!("invalid URL '{}': missing host", url),
+        ));
     }
 
     Ok(ParsedHttpUrl {
@@ -129,43 +144,103 @@ fn parse_http_url(url: &str) -> Result<ParsedHttpUrl, EvalError> {
 
 fn send_http_plain(
     method: &str,
+    url: &str,
     parsed: &ParsedHttpUrl,
     body: &str,
 ) -> Result<HttpResponse, EvalError> {
     let address = format!("{}:{}", parsed.host, parsed.port);
     let socket_addr = address
         .to_socket_addrs()
-        .map_err(|err| EvalError::new(format!("failed to resolve '{}': {}", address, err)))?
+        .map_err(|err| {
+            http_error(
+                url,
+                "resolve",
+                Some(&address),
+                format!("failed to resolve host: {}", err),
+            )
+        })?
         .next()
-        .ok_or_else(|| EvalError::new(format!("failed to resolve '{}': no addresses", address)))?;
+        .ok_or_else(|| {
+            http_error(
+                url,
+                "resolve",
+                Some(&address),
+                "failed to resolve host: no addresses",
+            )
+        })?;
+    let resolved_target = format!("{address} -> {socket_addr}");
 
-    let mut stream = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(10))
-        .map_err(|err| EvalError::new(format!("failed to connect to '{}': {}", address, err)))?;
+    let mut stream =
+        TcpStream::connect_timeout(&socket_addr, Duration::from_secs(10)).map_err(|err| {
+            http_error(
+                url,
+                "connect",
+                Some(&resolved_target),
+                format!("failed to connect: {}", err),
+            )
+        })?;
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
-        .map_err(|err| EvalError::new(format!("failed to set read timeout: {}", err)))?;
+        .map_err(|err| {
+            http_error(
+                url,
+                "connect",
+                Some(&resolved_target),
+                format!("failed to set read timeout: {}", err),
+            )
+        })?;
     stream
         .set_write_timeout(Some(Duration::from_secs(10)))
-        .map_err(|err| EvalError::new(format!("failed to set write timeout: {}", err)))?;
+        .map_err(|err| {
+            http_error(
+                url,
+                "connect",
+                Some(&resolved_target),
+                format!("failed to set write timeout: {}", err),
+            )
+        })?;
 
     let request = build_http_request(method, parsed, body);
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|err| EvalError::new(format!("failed to write HTTP request: {}", err)))?;
-    stream
-        .flush()
-        .map_err(|err| EvalError::new(format!("failed to flush HTTP request: {}", err)))?;
+    stream.write_all(request.as_bytes()).map_err(|err| {
+        http_error(
+            url,
+            "connect",
+            Some(&resolved_target),
+            format!("failed to write HTTP request: {}", err),
+        )
+    })?;
+    stream.flush().map_err(|err| {
+        http_error(
+            url,
+            "connect",
+            Some(&resolved_target),
+            format!("failed to flush HTTP request: {}", err),
+        )
+    })?;
 
     let mut raw = String::new();
-    stream
-        .read_to_string(&mut raw)
-        .map_err(|err| EvalError::new(format!("failed to read HTTP response: {}", err)))?;
+    stream.read_to_string(&mut raw).map_err(|err| {
+        http_error(
+            url,
+            "read",
+            Some(&resolved_target),
+            format!("failed to read HTTP response: {}", err),
+        )
+    })?;
 
-    parse_http_response(&raw)
+    parse_http_response(&raw).map_err(|err| {
+        http_error(
+            url,
+            "read",
+            Some(&resolved_target),
+            format!("failed to parse HTTP response: {}", err.message),
+        )
+    })
 }
 
 fn send_https_via_openssl(
     method: &str,
+    url: &str,
     parsed: &ParsedHttpUrl,
     body: &str,
 ) -> Result<HttpResponse, EvalError> {
@@ -184,36 +259,70 @@ fn send_https_via_openssl(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| {
-            EvalError::new(format!(
-                "failed to start openssl for HTTPS request: {} (is 'openssl' installed?)",
-                err
-            ))
+            http_error(
+                url,
+                "tls",
+                Some(&connect_target),
+                format!(
+                    "failed to start openssl for HTTPS request: {} (is 'openssl' installed?)",
+                    err
+                ),
+            )
         })?;
 
     {
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| EvalError::new("failed to open stdin for openssl process"))?;
-        stdin
-            .write_all(request.as_bytes())
-            .map_err(|err| EvalError::new(format!("failed to send HTTPS request: {}", err)))?;
+        let stdin = child.stdin.as_mut().ok_or_else(|| {
+            http_error(
+                url,
+                "tls",
+                Some(&connect_target),
+                "failed to open stdin for openssl process",
+            )
+        })?;
+        stdin.write_all(request.as_bytes()).map_err(|err| {
+            http_error(
+                url,
+                "tls",
+                Some(&connect_target),
+                format!("failed to send HTTPS request: {}", err),
+            )
+        })?;
     }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|err| EvalError::new(format!("failed to read HTTPS response: {}", err)))?;
+    let output = child.wait_with_output().map_err(|err| {
+        http_error(
+            url,
+            "read",
+            Some(&connect_target),
+            format!("failed to read HTTPS response: {}", err),
+        )
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(EvalError::new(format!(
-            "openssl HTTPS request failed: {}",
-            stderr.trim()
-        )));
+        return Err(http_error(
+            url,
+            "tls",
+            Some(&connect_target),
+            format!("openssl HTTPS request failed: {}", stderr.trim()),
+        ));
     }
 
-    let raw = String::from_utf8(output.stdout)
-        .map_err(|_| EvalError::new("HTTPS response contained non-utf8 data"))?;
-    parse_http_response(&raw)
+    let raw = String::from_utf8(output.stdout).map_err(|_| {
+        http_error(
+            url,
+            "read",
+            Some(&connect_target),
+            "HTTPS response contained non-utf8 data",
+        )
+    })?;
+    parse_http_response(&raw).map_err(|err| {
+        http_error(
+            url,
+            "read",
+            Some(&connect_target),
+            format!("failed to parse HTTPS response: {}", err.message),
+        )
+    })
 }
 
 fn build_http_request(method: &str, parsed: &ParsedHttpUrl, body: &str) -> String {
@@ -267,4 +376,27 @@ fn parse_http_response(raw: &str) -> Result<HttpResponse, EvalError> {
         .map_err(|_| EvalError::new("invalid HTTP response: status code is not a number"))?;
 
     Ok(HttpResponse { status, body })
+}
+
+impl ParsedHttpUrl {
+    fn host_port(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+}
+
+fn http_error(
+    url: &str,
+    phase: &str,
+    target: Option<&str>,
+    detail: impl Into<String>,
+) -> EvalError {
+    let detail = detail.into();
+    match target {
+        Some(target) => EvalError::new(format!(
+            "http request failed (phase={phase}, url={url}, target={target}): {detail}"
+        )),
+        None => EvalError::new(format!(
+            "http request failed (phase={phase}, url={url}): {detail}"
+        )),
+    }
 }

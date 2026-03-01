@@ -1,0 +1,49 @@
+{
+  "name": "tfel-syntax",
+  "displayName": "TFEL Syntax",
+  "description": "Syntax highlighting and minimal language server support for TFEL.",
+  "version": "0.0.1",
+  "publisher": "tfel-local",
+  "license": "Apache-2.0",
+  "main": "./extension.js",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "scripts": {
+    "check": "node --check extension.js && node --check server.js"
+  },
+  "activationEvents": [
+    "onLanguage:tfel"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "tfel",
+        "aliases": [
+          "TFEL",
+          "tfel"
+        ],
+        "extensions": [
+          ".tfel",
+          ".logical.tfel"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tfel",
+        "scopeName": "source.tfel",
+        "path": "./syntaxes/tfel.tmLanguage.json"
+      }
+    ]
+  }
+}

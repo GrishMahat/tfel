@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use tfel::evaluator::{Evaluator, Value};
+use tfel::evaluator::{Evaluator, EvaluatorOptions, RuntimePermissions, Value};
 use tfel::lexer::tokenize;
 use tfel::parser::Parser;
 use tfel::preprocessor::preprocess_source;
@@ -84,7 +84,17 @@ fn file_library_round_trip_write_read_delete() {
         .parse_program()
         .expect("parser should pass");
 
-    let mut eval = Evaluator::with_base_dir(dir.clone());
+    let mut eval = Evaluator::with_base_dir_and_options(
+        dir.clone(),
+        EvaluatorOptions {
+            strict_tfel: false,
+            permissions: RuntimePermissions {
+                allow_fs: true,
+                allow_net: false,
+            },
+            module_search_paths: Vec::new(),
+        },
+    );
     let value = eval.eval_program(&program).expect("evaluation should pass");
     assert_eq!(value, Value::String("cursed".to_string()));
 
@@ -160,4 +170,29 @@ fn explicit_exports_limit_imported_symbols() {
     assert!(hidden_err.message.contains("does not export 'hidden'"));
 
     let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn object_literal_and_string_key_indexing_work() {
+    let tokens =
+        tokenize("}\"name\": \"tfel\", count: 2{]\"name\"[;").expect("lexing should pass");
+    let program = Parser::new(tokens)
+        .parse_program()
+        .expect("parser should pass");
+
+    let mut eval = Evaluator::new();
+    let value = eval.eval_program(&program).expect("evaluation should pass");
+    assert_eq!(value, Value::String("tfel".to_string()));
+}
+
+#[test]
+fn string_interpolation_evaluates_expressions() {
+    let tokens = tokenize("10 = n; \"fib(${n}) -> ${n + 1}\";").expect("lexing should pass");
+    let program = Parser::new(tokens)
+        .parse_program()
+        .expect("parser should pass");
+
+    let mut eval = Evaluator::new();
+    let value = eval.eval_program(&program).expect("evaluation should pass");
+    assert_eq!(value, Value::String("fib(10) -> 11".to_string()));
 }

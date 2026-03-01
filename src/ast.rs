@@ -67,6 +67,7 @@ pub enum Expr {
     String(String),
     Boolean(bool),
     Array(Vec<Expr>),
+    Object(Vec<(String, Expr)>),
     Index {
         target: Box<Expr>,
         index: Box<Expr>,

@@ -2,3 +2,4 @@
 .DS_Store
 *.log
 examples/scratch/*.txt
+editors/vscode-tfel/node_modules/

@@ -104,3 +104,29 @@ fn strict_mode_rejects_let_keyword_with_hint() {
         Some("use `tel name = value;` instead")
     );
 }
+
+#[test]
+fn parses_object_literal_and_index_expression() {
+    let src = "}\"name\": \"tfel\", count: 2{]\"name\"[;";
+    let tokens = tokenize(src).expect("lexer should succeed");
+    let program = Parser::new(tokens)
+        .parse_program()
+        .expect("parser should succeed");
+
+    match &program.statements[0] {
+        Stmt::Expr(Expr::Index { target, index }) => {
+            assert_eq!(index.as_ref(), &Expr::String("name".to_string()));
+            match target.as_ref() {
+                Expr::Object(entries) => {
+                    assert_eq!(entries.len(), 2);
+                    assert_eq!(entries[0].0, "name");
+                    assert_eq!(entries[0].1, Expr::String("tfel".to_string()));
+                    assert_eq!(entries[1].0, "count");
+                    assert_eq!(entries[1].1, Expr::Number(2.0));
+                }
+                _ => panic!("expected object literal target"),
+            }
+        }
+        _ => panic!("expected object index expression"),
+    }
+}

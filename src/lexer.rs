@@ -69,6 +69,7 @@ pub enum TokenKind {
     GtEq,
 
     Comma,
+    Colon,
     Semicolon,
     LParen,
     RParen,
@@ -239,6 +240,7 @@ impl<'a> Lexer<'a> {
             '<' => Token::new(TokenKind::Lt, Span::new(start, self.position)),
             '>' => Token::new(TokenKind::Gt, Span::new(start, self.position)),
             ',' => Token::new(TokenKind::Comma, Span::new(start, self.position)),
+            ':' => Token::new(TokenKind::Colon, Span::new(start, self.position)),
             ';' => Token::new(TokenKind::Semicolon, Span::new(start, self.position)),
             '(' => Token::new(TokenKind::LParen, Span::new(start, self.position)),
             ')' => Token::new(TokenKind::RParen, Span::new(start, self.position)),

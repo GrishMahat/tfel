@@ -417,6 +417,7 @@ impl Parser {
                 Ok(expr)
             }
             TokenKind::LBracket => self.parse_array_literal(),
+            TokenKind::LBrace => self.parse_object_literal(),
             _ => {
                 let mut err = ParseError::new(
                     format!(
@@ -567,6 +568,48 @@ impl Parser {
         }
 
         Ok(Expr::Array(items))
+    }
+
+    fn parse_object_literal(&mut self) -> Result<Expr, ParseError> {
+        let mut entries = Vec::new();
+
+        if self.check(|kind| matches!(kind, TokenKind::RBrace)) {
+            self.advance();
+            return Ok(Expr::Object(entries));
+        }
+
+        loop {
+            let key_token = self.advance();
+            let key = match key_token.kind {
+                TokenKind::String(key) | TokenKind::Ident(key) => key,
+                _ => {
+                    return Err(ParseError::new(
+                        "expected string or identifier as object key",
+                        key_token.span,
+                    ));
+                }
+            };
+
+            self.expect(
+                |kind| matches!(kind, TokenKind::Colon),
+                "expected ':' after object key",
+            )?;
+            let value = self.parse_expression(Precedence::Lowest)?;
+            entries.push((key, value));
+
+            if self.check(|kind| matches!(kind, TokenKind::Comma)) {
+                self.advance();
+                continue;
+            }
+
+            self.expect(
+                |kind| matches!(kind, TokenKind::RBrace),
+                "expected '}' after object literal",
+            )?;
+            break;
+        }
+
+        Ok(Expr::Object(entries))
     }
 
     fn parse_index_expression(&mut self, target: Expr) -> Result<Expr, ParseError> {
@@ -759,6 +802,7 @@ fn describe_token_kind(kind: &TokenKind) -> String {
         TokenKind::RBrace => "'}'".to_string(),
         TokenKind::LBracket => "'['".to_string(),
         TokenKind::RBracket => "']'".to_string(),
+        TokenKind::Colon => "':'".to_string(),
         TokenKind::Eof => "end of file".to_string(),
         other => format!("token {:?}", other),
     }

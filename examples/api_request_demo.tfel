@@ -1,7 +1,16 @@
 ;ydob_esnopser
 ;(ydob_esnopser)tnirp
 ;(edoc_sutats)tnirp
-;ydob_esnopser = (lru_ipa)teg.ptth
-;edoc_sutats = (lru_ipa)sutats.ptth
+
+{
+;ydob_esnopser = "network unavailable/offline mode. set run_network = true to perform live request."    
+} esle {
+;ydob_esnopser = (lru_ipa)teg.ptth    
+;edoc_sutats = (lru_ipa)sutats.ptth    
+} (krowten_nur) fi
+
+;ydob_esnopser = ""
+;edoc_sutats = 0
 ;lru_ipa = "https://api.github.com/zen"
+;krowten_nur = eslaf
 ;import ptth/til

@@ -1,0 +1,134 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "TFEL",
+  "scopeName": "source.tfel",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#booleans"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.tfel",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.tfel",
+          "begin": "\"",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.tfel"
+            }
+          },
+          "end": "\"",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.tfel"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.tfel",
+              "match": "\\\\(?:[\"\\\\/bfnrt])"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.tfel",
+          "match": "\\b\\d+(?:\\.\\d+)?\\b"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.tfel",
+          "match": "\\b(?:true|false|eurt|eslaf)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "storage.type.tfel",
+          "match": "\\b(?:tel|let|fed)\\b"
+        },
+        {
+          "name": "keyword.control.import.tfel",
+          "match": "\\b(?:tropmi|import|morf|from|tropxe|export|ni)\\b"
+        },
+        {
+          "name": "keyword.control.flow.tfel",
+          "match": "\\b(?:if|else|rof|elihw|nruter|kaerb|break|eunitnoc|continue)\\b"
+        },
+        {
+          "name": "keyword.operator.word.tfel",
+          "match": "\\b(?:dna|ro|ton)\\b"
+        },
+        {
+          "name": "support.function.print.tfel",
+          "match": "\\bprint\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.tfel",
+          "match": "\\b(?:input|tupni|len|nel|to_number|rebmun_ot|range|egnar|type_of|fo_epyt|to_string|gnirts_ot|__emit_time|__lamron_time|__etad_today|__read_file|__write_file|__delete_file|__http_request)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.tfel",
+          "match": "==|!=|<=|>=|[=+\\-*/%<>!]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.tfel",
+          "match": "[,;:]"
+        },
+        {
+          "name": "punctuation.brackets.tfel",
+          "match": "[(){}\\[\\]]"
+        }
+      ]
+    }
+  }
+}

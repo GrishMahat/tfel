@@ -94,3 +94,22 @@ fn strict_mode_disables_import_alias_keywords() {
         ]
     );
 }
+
+#[test]
+fn tokenizes_object_literal_colon_syntax() {
+    let src = "}\"k\": 1{;";
+    let tokens = tokenize(src).expect("lexer should succeed");
+    let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            TokenKind::LBrace,
+            TokenKind::String("k".to_string()),
+            TokenKind::Colon,
+            TokenKind::Number(1.0),
+            TokenKind::RBrace,
+            TokenKind::Semicolon,
+            TokenKind::Eof
+        ]
+    );
+}

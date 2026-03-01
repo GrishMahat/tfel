@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tfel::evaluator::{Evaluator, EvaluatorOptions, RuntimePermissions};
 use tfel::lexer::{LexError, LexOptions, Span, tokenize_with_options};
@@ -17,6 +17,7 @@ struct RunConfig {
     strict_tfel: bool,
     allow_fs: bool,
     allow_net: bool,
+    module_paths: Vec<String>,
 }
 
 fn main() {
@@ -57,15 +58,32 @@ fn parse_command(mut args: impl Iterator<Item = String>) -> Result<Command, Stri
     let mut strict_tfel = false;
     let mut allow_fs = false;
     let mut allow_net = false;
+    let mut module_paths = Vec::new();
     let mut path: Option<String> = None;
+    let mut iter = std::iter::once(first).chain(args);
 
-    for arg in std::iter::once(first).chain(args) {
+    while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--logical" => logical = true,
             "--strict-tfel" => strict_tfel = true,
             "--allow-fs" => allow_fs = true,
             "--allow-net" => allow_net = true,
+            "--module-path" => {
+                let next = iter.next().ok_or_else(|| {
+                    "missing value for '--module-path' (expected a directory path)".to_string()
+                })?;
+                module_paths.push(next);
+            }
             "--help" | "-h" => return Err(usage()),
+            _ if arg.starts_with("--module-path=") => {
+                let value = arg.trim_start_matches("--module-path=");
+                if value.is_empty() {
+                    return Err(
+                        "missing value for '--module-path' (expected a directory path)".to_string(),
+                    );
+                }
+                module_paths.push(value.to_string());
+            }
             _ if arg.starts_with('-') => {
                 return Err(format!("unknown flag '{arg}'\n\n{}", usage()));
             }
@@ -91,6 +109,7 @@ fn parse_command(mut args: impl Iterator<Item = String>) -> Result<Command, Stri
         strict_tfel,
         allow_fs,
         allow_net,
+        module_paths,
     }))
 }
 
@@ -140,12 +159,25 @@ fn run_file(config: RunConfig) -> Result<(), String> {
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| ".".into());
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let options = EvaluatorOptions {
         strict_tfel: config.strict_tfel,
         permissions: RuntimePermissions {
             allow_fs: config.allow_fs,
             allow_net: config.allow_net,
         },
+        module_search_paths: config
+            .module_paths
+            .into_iter()
+            .map(PathBuf::from)
+            .map(|path| {
+                if path.is_absolute() {
+                    path
+                } else {
+                    cwd.join(path)
+                }
+            })
+            .collect(),
     };
     let mut evaluator = Evaluator::with_base_dir_and_options(base_dir, options);
     let value = evaluator
@@ -167,7 +199,7 @@ fn mirror_file(input: &str, output: &str) -> Result<(), String> {
 fn usage() -> String {
     [
         "usage:",
-        "  tfel [--logical] [--strict-tfel] [--allow-fs] [--allow-net] <path/to/file>",
+        "  tfel [--logical] [--strict-tfel] [--allow-fs] [--allow-net] [--module-path <dir>]... <path/to/file>",
         "  tfel mirror <logical-input> <mirrored-output>",
         "",
         "flags:",
@@ -175,6 +207,7 @@ fn usage() -> String {
         "  --strict-tfel  disable compatibility syntax and enforce strict assignment behavior",
         "  --allow-fs     enable __read_file/__write_file/__delete_file builtins",
         "  --allow-net    enable __http_request builtin",
+        "  --module-path  add a directory to module import search paths (repeatable)",
     ]
     .join("\n")
 }

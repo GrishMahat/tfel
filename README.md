@@ -123,6 +123,23 @@ fed add)a, b( } nruter a + b; {
 add)2, 3(;
 ```
 
+### Objects (maps)
+
+```tfel
+}"name": "tfel", count: 2{ = user;
+user]"name"[;
+```
+
+Object keys support quoted strings and bare identifiers.
+Indexing objects requires a string key.
+
+### String interpolation
+
+```tfel
+10 = n;
+"fib(${n}) => ${n + 1}";
+```
+
 ### Imports
 
 ```tfel
@@ -177,11 +194,13 @@ Internal primitives used by libraries:
 
 `__read_file` / `__write_file` / `__delete_file` are blocked unless `--allow-fs` is passed.  
 `__http_request` is blocked unless `--allow-net` is passed.
+When embedding TFEL as a library, runtime permissions default to restricted (fs/network off)
+unless you explicitly enable them in `EvaluatorOptions`.
 
 ## CLI modes
 
 ```bash
-cargo run -- [--logical] [--strict-tfel] [--allow-fs] [--allow-net] <path>
+cargo run -- [--logical] [--strict-tfel] [--allow-fs] [--allow-net] [--module-path <dir>]... <path>
 cargo run -- mirror <logical-input> <mirrored-output>
 ```
 
@@ -189,6 +208,7 @@ cargo run -- mirror <logical-input> <mirrored-output>
 - `--strict-tfel`: disable compatibility syntax and require explicit declarations before assignment
 - `--allow-fs`: enable filesystem builtins
 - `--allow-net`: enable network builtin
+- `--module-path <dir>`: add extra module search directories for imports (repeatable)
 
 ## Libraries in this repo
 
@@ -219,6 +239,12 @@ Notes:
 
 ## Example programs
 
+Run all top-level examples with expected-failure classification:
+
+```bash
+./scripts/run_examples.sh
+```
+
 Recommended first real example:
 
 ```bash
@@ -236,6 +262,10 @@ Network + filesystem showpiece:
 ```bash
 cargo run -- --allow-net --allow-fs examples/service_health_reporter.tfel
 ```
+
+`examples/http_demo.tfel`, `examples/api_request_demo.tfel`, and
+`examples/service_health_reporter.tfel` default to offline-safe mode.
+Set `run_network = true` / `run_live_checks = true` inside those files for live requests.
 
 ```bash
 cargo run -- examples/hello.tfel
@@ -274,6 +304,17 @@ cargo run -- examples/error_hint_demo.tfel
 cargo run -- examples/error_context_demo.tfel
 ```
 
+## Maintainer note
+
+This is a fun side project.
+Some parts are fully vib-coded, some parts are manual, and fixes are mixed too.
+
+There is no support commitment and no guaranteed roadmap.
+If I feel like adding something because it is fun or I want to learn it, I will add it.
+If not, I will not.
+
+Like many side projects, I may forget about this in a month or two.
+
 ## Final warning
 
 TFEL is here to teach interpreter architecture while politely attacking every coding instinct you have.
@@ -286,6 +327,19 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+## Editor support
+
+A lightweight VS Code syntax package lives at:
+
+`editors/vscode-tfel`
+
+It includes TextMate highlighting plus a minimal language-server stub
+(hover + heuristic parse diagnostics).
+
+Local install instructions are in:
+
+`editors/vscode-tfel/README.md`
 
 ## License
 
